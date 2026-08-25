@@ -1,0 +1,30 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Dummy OS Data",
+        "description": "Selecteer de canonieke Home Power-sensor waarmee historische woningdata per kwartier wordt opgebouwd.",
+        "data": {
+          "home_power_entity": "Bron woningvermogen"
+        }
+      }
+    },
+    "error": {
+      "source_not_found": "De geselecteerde bronentiteit bestaat niet.",
+      "unsupported_unit": "De geselecteerde bron moet W of kW gebruiken."
+    },
+    "abort": {
+      "already_configured": "Dummy OS Data is al geconfigureerd."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Dummy OS Data-opties",
+        "data": {
+          "home_power_entity": "Bron woningvermogen"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Dummy OS Data",
+        "description": "Select the canonical Home Power sensor used to build 15-minute historical consumption data.",
+        "data": {
+          "home_power_entity": "Home power source"
+        }
+      }
+    },
+    "error": {
+      "source_not_found": "The selected source entity does not exist.",
+      "unsupported_unit": "The selected source must use W or kW."
+    },
+    "abort": {
+      "already_configured": "Dummy OS Data is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Dummy OS Data options",
+        "data": {
+          "home_power_entity": "Home power source"
+        }
+      }
+    }
+  }
+}
