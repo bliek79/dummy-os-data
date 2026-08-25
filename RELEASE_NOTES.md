@@ -1,45 +1,44 @@
 # GitHub Release
 
-**Tag:** `0.1.0-alpha.1`  
-**Release title:** `Dummy OS Data 0.1.0-alpha.1 - Home Forecast Historical Foundation`
+**Tag:** `0.1.0-alpha.2`  
+**Release title:** `Dummy OS Data 0.1.0-alpha.2 - Home Forecast Baseline Model`
 
-## Dummy OS Data 0.1.0-alpha.1
+## Dummy OS Data 0.1.0-alpha.2
 
-Eerste integreerbare alpha van Dummy OS Data. Deze release legt uitsluitend de permanente historische kwartierbasis voor de toekomstige Woning Forecast aan; er wordt nog geen forecast of plannersturing geactiveerd.
+Tweede integreerbare alpha van Dummy OS Data. Deze release bouwt voort op de permanente 15-minutenhistorie uit alpha.1 en activeert de eerste transparante 72-uurs Woning Forecast op basis van historische kwartierprofielen.
 
 ### Nieuw
-- Nieuwe Home Assistant custom integration `dummy_os_data` met Config Flow.
-- Configureerbare canonieke woningvermogensbron, standaard `sensor.home_power`.
-- Native 15-minuten historische datalaag voor woningverbruik.
-- Omrekening van werkelijk vermogen in W/kW naar gerealiseerde energie per afgesloten kwartier in kWh.
-- Persistente opslag van kwartierrecords via Home Assistant `.storage`.
-- Gescheiden historische profielen `normal` en `away` via `select.do_home_profile`.
-- Permanente `do_`-entity-ID/unique-ID basis voor de Home Forecast-module.
-- Datakwaliteitscontrole op bronbeschikbaarheid en kwartierdekking.
-
-### Entiteiten
-- `sensor.do_home_actual_quarter`
-- `sensor.do_home_history_status`
-- `sensor.do_home_history_days`
-- `sensor.do_home_forecast_model`
-- `select.do_home_profile`
+- Historische analyse per actief profiel, weekdag en kwartiernummer.
+- Native 72-uurs forecast met 288 kwartierslots.
+- Nieuwe `sensor.do_home_forecast` met de forecasttotalen en de volledige 15-minutentijdlijn als attribuut.
+- Nieuwe `sensor.do_home_forecast_next_quarter` voor de eerstvolgende kwartierprognose.
+- Nieuwe `sensor.do_home_forecast_coverage` voor de actuele beschikbaarheid van forecastslots.
+- Transparante fallbackvolgorde bij beperkte historie: weekdag+kwartier -> kwartier van de dag -> profielgemiddelde -> unavailable.
+- Per forecastslot metadata voor bron, sample count en confidence.
+- Compacte profielstatistieken voor `normal` en `away` in de bestaande historiek-/modelstatus.
+- DST-veilige opbouw van de rolling forecasttijdlijn in UTC met lokale weekdag/kwartierselectie.
 
 ### Gewijzigd
-- De v2 Woning Forecast wordt vanaf deze release native op 15-minutenbasis opgebouwd.
-- Forecast- en evaluatiemodellen bouwen later voort op dezelfde kwartierhistorie zonder de huidige entiteitsidentiteiten te wijzigen.
+- `sensor.do_home_forecast_model` gaat van `historical_foundation` naar `historical_baseline`.
+- Modelversie wordt `0.2` en `forecast_active` wordt `true`.
+- Integratieversie wordt `0.1.0-alpha.2`.
+- Documentatielink in `manifest.json` verwijst nu naar de definitieve repository `bliek79/dummy-os-data`.
 
 ### Ongewijzigd
-- Geen woningverbruiksforecast actief in deze alpha.
-- Geen forecast accuracy/MAE/bias-berekening actief in deze alpha.
-- Geen koppeling met de Dummy OS EMS-planner.
-- Geen fysieke batterij- of andere actuatorsturing.
-- Bestaande Home Assistant energiesensoren en packages worden niet gewijzigd.
+- De bestaande alpha.1-opslagstructuur en historie blijven behouden.
+- Bestaande unique IDs en entity-ID-basis worden niet gewijzigd.
+- `normal` en `away` blijven strikt gescheiden.
+- Geen Recorder/InfluxDB-backfill in deze alpha.
+- Geen weather-, seizoen-, presence- of recent-trendcorrectie in deze alpha.
+- Geen forecast accuracy, MAE of bias in deze alpha.
+- Geen koppeling met Dummy OS EMS-planner of fysieke sturing.
 
 ### Validatie
-- Integratie moet via de Home Assistant UI toegevoegd kunnen worden.
-- `sensor.home_power` moet als standaard bron geselecteerd kunnen worden.
-- Na een volledig geldig kwartier moet `sensor.do_home_actual_quarter` een kWh-waarde tonen.
-- `sensor.do_home_history_status` moet na geldige historische opbouw `ok` tonen.
-- `select.do_home_profile` moet `normal` en `away` ondersteunen en de keuze persistent bewaren.
-- De actual-quarter sensor gebruikt `device_class: energy`, unit `kWh` en bewust geen `state_class`.
+- Bestaande alpha.1-historie moet na upgrade behouden blijven.
+- `sensor.do_home_history_status` moet bij geldige bron `ok` blijven.
+- `sensor.do_home_forecast_model` moet `historical_baseline` tonen met modelversie `0.2`.
+- `sensor.do_home_forecast` moet een horizon van 72 uur en 288 slots rapporteren.
+- `sensor.do_home_forecast_next_quarter` moet bij beschikbare profielhistorie een kWh-waarde tonen.
+- Forecastslots moeten alleen data uit het actieve `normal`- of `away`-profiel gebruiken.
+- Forecast-/snapshot-entiteiten met kWh gebruiken bewust geen `state_class: measurement`.
 - Er mogen geen nieuwe `dummy_os_data`-fouten in de Home Assistant-log ontstaan.
