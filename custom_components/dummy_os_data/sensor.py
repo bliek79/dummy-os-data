@@ -33,6 +33,7 @@ async def async_setup_entry(
             DummyOSHistoryDaysSensor(coordinator),
             DummyOSForecastModelSensor(coordinator),
             DummyOSHomeForecastSensor(coordinator),
+            DummyOSHomeForecastTimelineSensor(coordinator),
             DummyOSHomeForecastNextQuarterSensor(coordinator),
             DummyOSHomeForecastCoverageSensor(coordinator),
             DummyOSHomeForecastConfidenceSensor(coordinator),
@@ -205,6 +206,7 @@ class DummyOSForecastModelSensor(DummyOSBaseSensor):
             "evaluation_active": True,
             "recency_weighting_active": True,
             "day_type_active": True,
+            "dashboard_timeline_active": True,
             "resolution_minutes": 15,
             "horizon_hours": 72,
             "forecast_slots": FORECAST_SLOTS,
@@ -245,7 +247,44 @@ class DummyOSHomeForecastSensor(DummyOSBaseSensor):
             "supported_slots": supported,
             "coverage_percent": round(supported / len(slots) * 100, 1) if slots else 0.0,
             "average_confidence_percent": HomeBaselineForecast.average_confidence(slots),
-            "timeline_storage": "internal_only",
+            "timeline_entity": "sensor.do_home_forecast_timeline",
+        }
+
+
+class DummyOSHomeForecastTimelineSensor(DummyOSBaseSensor):
+    """Compact live 72-hour timeline for dashboards and future consumers."""
+
+    _attr_name = "Dummy OS Home Forecast Timeline"
+    _attr_unique_id = "do_home_forecast_timeline"
+    _attr_suggested_object_id = "do_home_forecast_timeline"
+    _attr_icon = "mdi:chart-line"
+    _unrecorded_attributes = frozenset({"points"})
+
+    @property
+    def native_value(self) -> int:
+        return sum(1 for slot in self._forecast() if slot.energy_kwh is not None)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        slots = self._forecast()
+        points = [
+            [int(slot.start.timestamp() * 1000), slot.energy_kwh]
+            for slot in slots
+            if slot.energy_kwh is not None
+        ]
+        return {
+            "profile": self.coordinator.profile,
+            "model": "historical_baseline",
+            "model_version": "0.4",
+            "resolution_minutes": 15,
+            "horizon_hours": 72,
+            "slot_count": len(slots),
+            "point_count": len(points),
+            "point_format": "[unix_ms, kwh]",
+            "forecast_start": slots[0].start.isoformat() if slots else None,
+            "forecast_end": slots[-1].end.isoformat() if slots else None,
+            "recorder_points": "excluded",
+            "points": points,
         }
 
 
