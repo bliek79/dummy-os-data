@@ -2,80 +2,97 @@
 
 Dummy OS Data is the forecast and historical data layer for Dummy OS.
 
-## 0.1.0-alpha.5 - Home Forecast Model Quality
+## 0.1.0-alpha.7 - Weather Forecast Foundation
 
-Alpha.5 builds on the working alpha.4 evaluation foundation and improves the Home Forecast itself while keeping the model transparent and fully history-driven.
+Alpha.7 adds the first Weather Forecast module to the existing Dummy OS Data integration while leaving the Home Forecast model behavior unchanged.
 
-### What this alpha does
+### Weather source
 
-- Keeps `sensor.home_power` as the canonical Home Power source by default.
-- Keeps persistent actual energy history per completed 15-minute slot.
-- Keeps the native 72-hour / 288-slot Home Forecast.
-- Keeps `normal` and `away` structurally separated.
-- Keeps persistent forecast-versus-actual evaluation from alpha.4.
-- Adds recency weighting with a 28-day half-life so newer observations gradually count more strongly than old ones.
-- Adds an explicit weekday/weekend (`day_type`) fallback between exact weekday matching and generic quarter-of-day matching.
-- Keeps exact weekday + quarter as the strongest historical match.
-- Adds forecast confidence as a permanent sensor.
-- Adds model health as a permanent sensor.
-- Keeps the full 288-slot forecast timeline internal and Recorder-safe.
+Weather data is provided by [Open-Meteo](https://open-meteo.com/). The integration uses the public Forecast API endpoint at `api.open-meteo.com/v1/forecast`.
 
-### Forecast fallback order
+Configured source location:
 
-1. Same weekday + same quarter (`weekday_quarter`).
-2. Same day type (weekday/weekend) + same quarter (`day_type_quarter`).
-3. Same quarter-of-day within the active profile (`quarter_of_day`).
-4. Recency-weighted active-profile mean (`profile_mean`).
-5. Unavailable when no valid history exists for the active profile.
+- latitude: `51.828981`
+- longitude: `4.839871`
+- timezone: `Europe/Berlin`
+- model selection: Open-Meteo `best_match`
 
-All historical means use exponential recency weighting with a 28-day half-life. This does not discard older history; its influence decreases gradually as newer valid observations accumulate.
+These coordinates intentionally match the configured Solcast site coordinates so later weather/solar comparisons use the same geographical reference.
 
-### Permanent entities
+### Refresh and source quality
 
-- `sensor.do_home_actual_quarter`
-- `sensor.do_home_history_status`
-- `sensor.do_home_history_days`
-- `sensor.do_home_forecast_model`
-- `sensor.do_home_forecast`
-- `sensor.do_home_forecast_next_quarter`
-- `sensor.do_home_forecast_coverage`
-- `sensor.do_home_forecast_confidence`
-- `sensor.do_home_forecast_model_health`
-- `sensor.do_home_forecast_accuracy`
-- `sensor.do_home_forecast_mae`
-- `sensor.do_home_forecast_bias`
-- `sensor.do_home_forecast_evaluation_samples`
-- `select.do_home_profile`
+- Initial fetch during integration setup.
+- Scheduled refresh each hour at `:00:05`.
+- Retry/backoff on a failed refresh: immediate, +5 seconds, +15 seconds.
+- The last successful dataset remains available if a later refresh fails.
+- Source status and freshness are exposed separately.
+- Fresh: under 90 minutes old.
+- Stale: 90 to under 180 minutes old, or a failed refresh while usable data remains.
+- Expired: 180 minutes or older.
 
-### Confidence and model health
+### Rolling Weather Forecast timeline
 
-`sensor.do_home_forecast_confidence` reports the average confidence of the currently generated 288 forecast slots. Confidence remains intentionally conservative while the history is sparse and rises as stronger historical matches gain samples.
+The source request uses Open-Meteo `forecast_minutely_15` rather than a calendar-day-only range. Dummy OS normalizes the returned data into its native forecast architecture:
 
-`sensor.do_home_forecast_model_health` provides a compact maturity state:
+- 15-minute resolution;
+- rolling horizon;
+- 72 hours;
+- exactly 288 usable slots;
+- compact live timeline for dashboards and future Home/Solar/Heat/Boiler consumers;
+- timeline points are excluded from Recorder attributes, matching the Recorder-safe Home Forecast pattern.
 
-- `collecting`: no valid quarter history yet;
-- `learning`: model works but historical/evaluation support is still limited;
-- `usable`: at least 40% supported 72-hour coverage, 32 evaluation samples and 45% average confidence;
-- `strong`: at least 80% supported coverage, 96 evaluation samples and 65% average confidence;
-- `source_unavailable`: canonical Home Power source is currently unavailable.
+Each timeline point contains:
 
-These thresholds describe model maturity, not a guarantee of forecast accuracy. Accuracy, MAE and bias remain the evidence layer for judging actual forecast performance.
+`[unix_ms, temperature_2m, relative_humidity_2m, dew_point_2m, apparent_temperature, precipitation, rain, weather_code, wind_speed_10m, wind_direction_10m, wind_gusts_10m, shortwave_radiation, sunshine_duration, diffuse_radiation, direct_normal_irradiance, is_day, direct_radiation]`
 
-### Evaluation method
+Solar-radiation values are the normal interval values, not the `instant` variants. GTI is deliberately not part of this first Weather module.
 
-Accuracy remains the aggregate WAPE-like alpha.4 metric:
+### Current Weather entities
 
-`max(0, 100 * (1 - sum(abs(forecast - actual)) / max(sum(actual), epsilon)))`
+- `sensor.do_weather_temperature`
+- `sensor.do_weather_apparent_temperature`
+- `sensor.do_weather_relative_humidity`
+- `sensor.do_weather_precipitation`
+- `sensor.do_weather_cloud_cover`
+- `sensor.do_weather_wind_speed`
+- `sensor.do_weather_wind_direction`
+- `sensor.do_weather_wind_gusts`
+- `sensor.do_weather_weather_code`
 
-MAE is mean absolute error per evaluated quarter. Bias is signed mean `forecast - actual`. Evaluations remain profile-separated and only use valid actual quarters that had a forecast frozen beforehand.
+### Forecast/source entities
 
-### State-class decisions
+- `sensor.do_weather_forecast_timeline`
+- `sensor.do_weather_source_status`
+- `sensor.do_weather_source_freshness`
+- `sensor.do_weather_last_update`
+- `sensor.do_weather_model`
 
-Forecast, completed-quarter and error kWh values are snapshots/metrics rather than cumulative meters. They deliberately do not use an inappropriate cumulative/measurement state class.
+### Daily source data
 
-### Known alpha limitations
+The live timeline sensor also keeps the requested seven-day daily Open-Meteo summary available as an unrecorded attribute, including min/max temperature, sunrise/sunset, daylight/sunshine duration, precipitation totals/hours, maximum wind/gusts and shortwave-radiation sum.
 
-- No Recorder/InfluxDB backfill yet; learning and evaluation use the integration's persistent storage.
-- Weather, season, recent short-term trend and presence correction are not yet part of this Home model.
-- The complete 288-slot timeline remains internal until a Recorder-safe dashboard/EMS consumer interface is added.
-- A restart inside a quarter can make that actual quarter invalid because coverage drops below the 90% threshold.
+### Home Forecast regression boundary
+
+Alpha.7 does not change Home Forecast model calculations. The existing Home Forecast remains:
+
+- `sensor.home_power` as canonical actual source;
+- native 15-minute resolution;
+- rolling 72-hour / 288-slot horizon;
+- separate `normal` and `away` profiles;
+- recency-weighted historical baseline model version `0.4`;
+- forecast-versus-actual evaluation with Accuracy, MAE and Bias;
+- Recorder-safe live Home Forecast timeline.
+
+Weather is not yet used as an input factor for Home Forecast. It is first exposed independently so its runtime quality can be validated before model coupling.
+
+### Next analysis opportunities
+
+Once Weather has proven stable, the same normalized timeline can be evaluated for:
+
+- Solar Forecast;
+- Home Forecast temperature/weather correction;
+- heat-demand modelling;
+- boiler modelling;
+- degree-day calculations based on Dummy OS weather data.
+
+No degree-day calculation is introduced in alpha.7; this alpha establishes the source data required to assess that next.

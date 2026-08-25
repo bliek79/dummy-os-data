@@ -23,6 +23,7 @@ from .const import (
 )
 from .evaluation import calculate_metrics
 from .forecast import ForecastSlot, HomeBaselineForecast
+from .weather import DummyOSWeatherCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,7 +41,7 @@ class QuarterResult:
 
 
 class DummyOSHomeDataCoordinator:
-    """Collect and persist 15-minute home-consumption history."""
+    """Collect Home history and host shared Dummy OS Data modules."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.hass = hass
@@ -52,6 +53,7 @@ class DummyOSHomeDataCoordinator:
         self.evaluations: list[dict[str, Any]] = []
         self.last_quarter: QuarterResult | None = None
         self.listeners: list[callback] = []
+        self.weather = DummyOSWeatherCoordinator(hass)
 
         self._quarter_start: datetime | None = None
         self._last_sample_time: datetime | None = None
@@ -76,7 +78,7 @@ class DummyOSHomeDataCoordinator:
         return self.hass.states.get(self.source_entity)
 
     async def async_setup(self) -> None:
-        """Load storage and start listeners."""
+        """Load storage and start Home and Weather listeners."""
         stored = await self.store.async_load() or {}
         self.profile = stored.get("profile", PROFILE_NORMAL)
         self.records = stored.get("records", [])
@@ -107,12 +109,14 @@ class DummyOSHomeDataCoordinator:
                 second=0,
             )
         )
+        await self.weather.async_setup()
 
     async def async_shutdown(self) -> None:
         """Stop listeners and persist data."""
         for unsub in self._unsubs:
             unsub()
         self._unsubs.clear()
+        await self.weather.async_shutdown()
         await self._async_save()
 
     def async_add_listener(self, listener: callback) -> callback:
