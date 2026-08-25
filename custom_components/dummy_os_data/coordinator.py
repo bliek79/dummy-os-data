@@ -21,6 +21,8 @@ from .const import (
     STORAGE_KEY,
     STORAGE_VERSION,
 )
+from .evaluation import calculate_metrics
+from .forecast import HomeBaselineForecast
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,6 +48,8 @@ class DummyOSHomeDataCoordinator:
         self.store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
         self.profile = PROFILE_NORMAL
         self.records: list[dict[str, Any]] = []
+        self.forecast_snapshots: dict[str, dict[str, Any]] = {}
+        self.evaluations: list[dict[str, Any]] = []
         self.last_quarter: QuarterResult | None = None
         self.listeners: list[callback] = []
 
@@ -76,11 +80,15 @@ class DummyOSHomeDataCoordinator:
         stored = await self.store.async_load() or {}
         self.profile = stored.get("profile", PROFILE_NORMAL)
         self.records = stored.get("records", [])
+        self.forecast_snapshots = stored.get("forecast_snapshots", {})
+        self.evaluations = stored.get("evaluations", [])
         self._prune_records()
+        self._prune_evaluations()
 
         now = dt_util.utcnow()
         self._start_new_quarter(now)
         self._set_initial_power(now)
+        self._capture_next_quarter_forecast(now)
 
         self._unsubs.append(
             async_track_state_change_event(
@@ -139,6 +147,8 @@ class DummyOSHomeDataCoordinator:
         self._start_new_quarter(now_utc)
         self._last_power_w = self._power_from_state(self.source_state)
         self._last_sample_time = now_utc
+        self._capture_next_quarter_forecast(now_utc)
+        await self._async_save()
         self._notify()
 
     def _start_new_quarter(self, now_utc: datetime) -> None:
@@ -196,19 +206,80 @@ class DummyOSHomeDataCoordinator:
                 "valid": result.valid,
             }
         )
+        self._evaluate_completed_quarter(result)
         self._prune_records()
+        self._prune_evaluations()
         await self._async_save()
+
+    def _capture_next_quarter_forecast(self, now_utc: datetime) -> None:
+        """Persist the forecast for the next 15-minute slot before it occurs."""
+        slots = HomeBaselineForecast(self.records).build(self.profile, now=now_utc)
+        if not slots:
+            return
+        slot = slots[0]
+        if slot.energy_kwh is None:
+            return
+        key = slot.start.isoformat()
+        self.forecast_snapshots[key] = {
+            "start": slot.start.isoformat(),
+            "end": slot.end.isoformat(),
+            "profile": self.profile,
+            "forecast_kwh": slot.energy_kwh,
+            "sample_count": slot.sample_count,
+            "source": slot.source,
+            "confidence": slot.confidence,
+            "model": "historical_baseline",
+            "model_version": "0.2",
+            "captured_at": dt_util.as_utc(now_utc).isoformat(),
+        }
+        self._prune_snapshots()
+
+    def _evaluate_completed_quarter(self, result: QuarterResult) -> None:
+        """Compare a valid completed quarter with the forecast captured beforehand."""
+        if not result.valid or result.energy_kwh is None:
+            return
+        snapshot = self.forecast_snapshots.pop(result.start.isoformat(), None)
+        if snapshot is None or snapshot.get("profile") != result.profile:
+            return
+        try:
+            forecast_kwh = float(snapshot["forecast_kwh"])
+        except (KeyError, TypeError, ValueError):
+            return
+        error_kwh = forecast_kwh - result.energy_kwh
+        self.evaluations.append(
+            {
+                "start": result.start.isoformat(),
+                "end": result.end.isoformat(),
+                "profile": result.profile,
+                "forecast_kwh": round(forecast_kwh, 6),
+                "actual_kwh": result.energy_kwh,
+                "error_kwh": round(error_kwh, 6),
+                "absolute_error_kwh": round(abs(error_kwh), 6),
+                "source": snapshot.get("source"),
+                "confidence": snapshot.get("confidence"),
+                "model": snapshot.get("model"),
+                "model_version": snapshot.get("model_version"),
+            }
+        )
 
     async def async_set_profile(self, profile: str) -> None:
         """Persist selected forecast profile."""
         if profile != self.profile:
             self._profile_changed_in_quarter = True
         self.profile = profile
+        self._capture_next_quarter_forecast(dt_util.utcnow())
         await self._async_save()
         self._notify()
 
     async def _async_save(self) -> None:
-        await self.store.async_save({"profile": self.profile, "records": self.records})
+        await self.store.async_save(
+            {
+                "profile": self.profile,
+                "records": self.records,
+                "forecast_snapshots": self.forecast_snapshots,
+                "evaluations": self.evaluations,
+            }
+        )
 
     def _prune_records(self) -> None:
         cutoff = dt_util.utcnow() - timedelta(days=MAX_HISTORY_DAYS)
@@ -223,6 +294,38 @@ class DummyOSHomeDataCoordinator:
             if start >= cutoff:
                 kept.append(record)
         self.records = kept
+
+    def _prune_snapshots(self) -> None:
+        cutoff = dt_util.utcnow() - timedelta(days=4)
+        kept: dict[str, dict[str, Any]] = {}
+        for key, snapshot in self.forecast_snapshots.items():
+            try:
+                start = datetime.fromisoformat(snapshot["start"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=dt_util.UTC)
+            if start >= cutoff:
+                kept[key] = snapshot
+        self.forecast_snapshots = kept
+
+    def _prune_evaluations(self) -> None:
+        cutoff = dt_util.utcnow() - timedelta(days=MAX_HISTORY_DAYS)
+        kept: list[dict[str, Any]] = []
+        for item in self.evaluations:
+            try:
+                start = datetime.fromisoformat(item["start"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=dt_util.UTC)
+            if start >= cutoff:
+                kept.append(item)
+        self.evaluations = kept
+
+    def evaluation_metrics(self, profile: str | None = None) -> dict[str, Any]:
+        """Return aggregate forecast evaluation metrics."""
+        return calculate_metrics(self.evaluations, profile)
 
     @staticmethod
     def _power_from_state(state: State | None) -> float | None:
