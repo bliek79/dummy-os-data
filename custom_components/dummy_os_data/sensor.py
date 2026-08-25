@@ -33,6 +33,10 @@ async def async_setup_entry(
             DummyOSHomeForecastSensor(coordinator),
             DummyOSHomeForecastNextQuarterSensor(coordinator),
             DummyOSHomeForecastCoverageSensor(coordinator),
+            DummyOSHomeForecastAccuracySensor(coordinator),
+            DummyOSHomeForecastMaeSensor(coordinator),
+            DummyOSHomeForecastBiasSensor(coordinator),
+            DummyOSHomeForecastEvaluationSamplesSensor(coordinator),
         ]
     )
 
@@ -192,9 +196,9 @@ class DummyOSForecastModelSensor(DummyOSBaseSensor):
     def extra_state_attributes(self) -> dict[str, Any]:
         model = HomeBaselineForecast(self.coordinator.records)
         return {
-            "model_version": "0.2",
+            "model_version": "0.3",
             "forecast_active": True,
-            "evaluation_active": False,
+            "evaluation_active": True,
             "resolution_minutes": 15,
             "horizon_hours": 72,
             "forecast_slots": FORECAST_SLOTS,
@@ -229,7 +233,7 @@ class DummyOSHomeForecastSensor(DummyOSBaseSensor):
         return {
             "profile": self.coordinator.profile,
             "model": "historical_baseline",
-            "model_version": "0.2",
+            "model_version": "0.3",
             "forecast_start": slots[0].start.isoformat() if slots else None,
             "resolution_minutes": 15,
             "horizon_hours": 72,
@@ -308,3 +312,80 @@ class DummyOSHomeForecastCoverageSensor(DummyOSBaseSensor):
             "supported_slots": supported,
             "source_distribution": sources,
         }
+
+
+class DummyOSEvaluationBaseSensor(DummyOSBaseSensor):
+    """Base for aggregate forecast evaluation sensors."""
+
+    @property
+    def _metrics(self) -> dict[str, Any]:
+        return self.coordinator.evaluation_metrics(self.coordinator.profile)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        metrics = self._metrics
+        return {
+            "profile": self.coordinator.profile,
+            "samples": metrics["samples"],
+            "actual_total_kwh": metrics["actual_total_kwh"],
+            "forecast_total_kwh": metrics["forecast_total_kwh"],
+            "evaluation_scope": "active_profile",
+            "resolution_minutes": 15,
+        }
+
+
+class DummyOSHomeForecastAccuracySensor(DummyOSEvaluationBaseSensor):
+    """Aggregate active-profile Home Forecast accuracy."""
+
+    _attr_name = "Dummy OS Home Forecast Accuracy"
+    _attr_unique_id = "do_home_forecast_accuracy"
+    _attr_suggested_object_id = "do_home_forecast_accuracy"
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_icon = "mdi:bullseye-arrow"
+
+    @property
+    def native_value(self) -> float | None:
+        return self._metrics["accuracy_percent"]
+
+
+class DummyOSHomeForecastMaeSensor(DummyOSEvaluationBaseSensor):
+    """Mean absolute error per evaluated quarter."""
+
+    _attr_name = "Dummy OS Home Forecast MAE"
+    _attr_unique_id = "do_home_forecast_mae"
+    _attr_suggested_object_id = "do_home_forecast_mae"
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_icon = "mdi:chart-bell-curve-cumulative"
+
+    @property
+    def native_value(self) -> float | None:
+        return self._metrics["mae_kwh"]
+
+
+class DummyOSHomeForecastBiasSensor(DummyOSEvaluationBaseSensor):
+    """Signed average forecast error per evaluated quarter."""
+
+    _attr_name = "Dummy OS Home Forecast Bias"
+    _attr_unique_id = "do_home_forecast_bias"
+    _attr_suggested_object_id = "do_home_forecast_bias"
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_icon = "mdi:scale-balance"
+
+    @property
+    def native_value(self) -> float | None:
+        return self._metrics["bias_kwh"]
+
+
+class DummyOSHomeForecastEvaluationSamplesSensor(DummyOSEvaluationBaseSensor):
+    """Number of evaluated forecast/actual quarter pairs."""
+
+    _attr_name = "Dummy OS Home Forecast Evaluation Samples"
+    _attr_unique_id = "do_home_forecast_evaluation_samples"
+    _attr_suggested_object_id = "do_home_forecast_evaluation_samples"
+    _attr_icon = "mdi:counter"
+
+    @property
+    def native_value(self) -> int:
+        return int(self._metrics["samples"])

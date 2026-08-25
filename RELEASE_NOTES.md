@@ -1,46 +1,47 @@
 # GitHub Release
 
-**Tag:** `0.1.0-alpha.3`  
-**Release title:** `Dummy OS Data 0.1.0-alpha.3 - Entity ID and Recorder Hotfix`
+**Tag:** `0.1.0-alpha.4`  
+**Release title:** `Dummy OS Data 0.1.0-alpha.4 - Home Forecast Evaluation Foundation`
 
-## Dummy OS Data 0.1.0-alpha.3
+## Dummy OS Data 0.1.0-alpha.4
 
-Gerichte hotfix op alpha.2. Deze release corrigeert de automatisch gegenereerde Home Assistant entity-ID's en voorkomt dat de volledige 288-slot forecast als te groot state-attribuut naar Recorder wordt geschreven.
+Deze release voegt de evaluatiebasis toe aan de bestaande Home Forecast. Vanaf deze versie worden voorspellingen vooraf per kwartier vastgelegd en na afloop automatisch vergeleken met het werkelijk gemeten woningverbruik.
 
-### Fixed
-- Bestaande door alpha.1/alpha.2 automatisch gegenereerde entity-ID's worden bij setup gemigreerd naar de afgesproken korte `do_`-namen.
-- De migratie behoudt de bestaande unique IDs en daarmee de entity-registry-identiteit.
-- Alleen bekende automatisch gegenereerde `dummy_os_data_dummy_os_*` entity-ID's worden aangepast; handmatig door de gebruiker gewijzigde entity-ID's blijven ongemoeid.
-- De volledige 288-slot forecasttijdlijn wordt niet langer als attribuut van `sensor.do_home_forecast` gepubliceerd. Hiermee wordt de Home Assistant Recorder-waarschuwing over state-attributen groter dan 16.384 bytes voorkomen.
+### New
+- Persistente forecast-snapshots voor toekomstige 15-minutenkwartieren.
+- Automatische forecast-versus-actual evaluatie na ieder geldig afgesloten kwartier.
+- Nieuwe `sensor.do_home_forecast_accuracy`.
+- Nieuwe `sensor.do_home_forecast_mae`.
+- Nieuwe `sensor.do_home_forecast_bias`.
+- Nieuwe `sensor.do_home_forecast_evaluation_samples`.
+- Accuracy gebruikt een robuuste WAPE-achtige vensterberekening zodat kwartieren met zeer laag werkelijk verbruik geen instabiele procentuele fout veroorzaken.
+- Evaluaties blijven strikt per `normal` / `away` profiel gescheiden.
+- Evaluatieregels bewaren forecast, actual, signed error, absolute error, bron, confidence en modelversie.
 
 ### Changed
-- `sensor.do_home_forecast` blijft een compacte 72-uurs samenvattingssensor met totaalverbruik, forecast-start, 15-minutenresolutie, 288 slots, populated slots, historically supported slots en coverage.
-- Het attribuut `timeline_storage: internal_only` maakt expliciet dat de volledige tijdlijn intern beschikbaar blijft en niet via Recorder-state-attributen wordt opgeslagen.
-- Integratieversie wordt `0.1.0-alpha.3`.
+- Home Forecast modelmetadata gaat naar modelversie `0.3` met `evaluation_active: true`.
+- De bestaande `.storage` payload wordt achterwaarts compatibel uitgebreid met `forecast_snapshots` en `evaluations`; de bestaande historie blijft behouden.
+- Op iedere kwartiergrens wordt de forecast voor het kwartier dat op dat moment begint vastgezet voordat werkelijke verbruiksdata van dat kwartier beschikbaar is.
+- Bij een herstart midden in een kwartier wordt dat lopende kwartier niet achteraf als eerlijke evaluatie gebruikt; de eerstvolgende volledige kwartierforecast wordt vooraf vastgelegd.
+- Nieuwe evaluatie-entiteiten worden eveneens gemigreerd naar de afgesproken korte `do_` entity-ID's wanneer Home Assistant eerst een langere automatisch gegenereerde naam aanmaakt.
+- Integratieversie wordt `0.1.0-alpha.4`.
 
 ### Unchanged
-- De Home Forecast blijft `historical_baseline`, modelversie `0.2`.
-- De native forecastresolutie blijft 15 minuten met 72 uur / 288 slots.
-- De alpha.1 opslagstructuur en reeds opgebouwde kwartierhistorie blijven ongewijzigd.
-- `normal` en `away` blijven strikt gescheiden.
-- Forecastberekening, fallbackvolgorde, confidence en coverage-logica uit alpha.2 blijven functioneel ongewijzigd.
-- Geen Recorder/InfluxDB-backfill.
-- Geen accuracy/MAE/bias-evaluatie.
-- Geen koppeling met Dummy OS EMS-planner of fysieke sturing.
+- Native Home Forecast-resolutie blijft 15 minuten.
+- Forecast-horizon blijft 72 uur / 288 slots.
+- Forecastmodel blijft `historical_baseline`; de bestaande baselineberekening en fallbackvolgorde blijven inhoudelijk gelijk.
+- Bestaande alpha.1-alpha.3 kwartierhistorie blijft behouden.
+- `normal` en `away` blijven structureel gescheiden.
+- De volledige 288-slot forecast blijft intern en wordt niet opnieuw als oversized Recorder state-attribuut gepubliceerd.
+- Geen EMS-uitvoering of fysieke sturing.
 
 ### Validation
-- Na upgrade moeten de acht entiteiten beschikbaar zijn als:
-  - `sensor.do_home_actual_quarter`
-  - `sensor.do_home_history_status`
-  - `sensor.do_home_history_days`
-  - `sensor.do_home_forecast_model`
-  - `sensor.do_home_forecast`
-  - `sensor.do_home_forecast_next_quarter`
-  - `sensor.do_home_forecast_coverage`
-  - `select.do_home_profile`
-- Bestaande historie en profielkeuze moeten behouden blijven.
-- `sensor.do_home_history_status` moet bij geldige bron `ok` blijven.
-- `sensor.do_home_forecast_model` moet `historical_baseline` tonen met modelversie `0.2`.
-- `sensor.do_home_forecast` moet 72 uur / 288 slots rapporteren zonder een volledige `forecast`-lijst als state-attribuut.
-- De Recorder-log mag geen nieuwe waarschuwing meer bevatten dat de state-attributen van `sensor.do_home_forecast` de limiet van 16.384 bytes overschrijden.
+- Na upgrade moeten 12 entiteiten aanwezig zijn: de bestaande 8 plus Accuracy, MAE, Bias en Evaluation Samples.
+- Alle entiteiten moeten de afgesproken korte `do_home_*` / `select.do_home_profile` entity-ID's gebruiken.
+- Bestaande historie en actieve profielkeuze moeten behouden blijven.
+- `sensor.do_home_forecast_model` moet `historical_baseline` tonen met modelversie `0.3` en `evaluation_active: true`.
+- Direct na installatie mogen Accuracy, MAE en Bias `unknown` zijn zolang nog geen volledig vooraf voorspeld kwartier is geëvalueerd.
+- Na het eerstvolgende volledig vooraf voorspelde en geldig gemeten kwartier moet `sensor.do_home_forecast_evaluation_samples` minimaal `1` worden en moeten Accuracy, MAE en Bias waarden krijgen.
+- Een ongeldig of mixed-profile kwartier mag geen evaluatiesample toevoegen.
+- Recorder mag geen oversized-attribute waarschuwing voor `sensor.do_home_forecast` geven.
 - Er mogen geen nieuwe `dummy_os_data` setup- of runtimefouten ontstaan.
