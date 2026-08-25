@@ -12,7 +12,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, FORECAST_SLOTS, NAME, VERSION
+from .const import DOMAIN, FORECAST_SLOTS, NAME, QUARTER_MINUTES, VERSION
 from .coordinator import DummyOSHomeDataCoordinator
 from .forecast import HomeBaselineForecast
 
@@ -45,6 +45,8 @@ class DummyOSBaseSensor(SensorEntity):
     def __init__(self, coordinator: DummyOSHomeDataCoordinator) -> None:
         self.coordinator = coordinator
         self._remove_listener = None
+        self._forecast_cache_key = None
+        self._forecast_cache = None
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -72,7 +74,19 @@ class DummyOSBaseSensor(SensorEntity):
         self.async_write_ha_state()
 
     def _forecast(self):
-        return HomeBaselineForecast(self.coordinator.records).build(self.coordinator.profile)
+        local = dt_util.as_local(dt_util.utcnow())
+        quarter_key = (
+            local.date().isoformat(),
+            local.hour,
+            local.minute // QUARTER_MINUTES,
+        )
+        key = (self.coordinator.profile, len(self.coordinator.records), quarter_key)
+        if key != self._forecast_cache_key:
+            self._forecast_cache = HomeBaselineForecast(self.coordinator.records).build(
+                self.coordinator.profile
+            )
+            self._forecast_cache_key = key
+        return self._forecast_cache or []
 
 
 class DummyOSActualQuarterSensor(DummyOSBaseSensor):
@@ -83,7 +97,6 @@ class DummyOSActualQuarterSensor(DummyOSBaseSensor):
     _attr_suggested_object_id = "do_home_actual_quarter"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_device_class = SensorDeviceClass.ENERGY
-    # Intentionally no state_class: this is a per-quarter snapshot, not a cumulative energy meter.
     _attr_icon = "mdi:home-lightning-bolt-outline"
 
     @property
@@ -150,7 +163,6 @@ class DummyOSHistoryDaysSensor(DummyOSBaseSensor):
     _attr_suggested_object_id = "do_home_history_days"
     _attr_native_unit_of_measurement = "d"
     _attr_icon = "mdi:calendar-clock-outline"
-    # Intentionally no state_class: this is a dataset-availability counter, not a measured physical quantity.
 
     @property
     def native_value(self) -> int:
@@ -199,7 +211,6 @@ class DummyOSHomeForecastSensor(DummyOSBaseSensor):
     _attr_suggested_object_id = "do_home_forecast"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_device_class = SensorDeviceClass.ENERGY
-    # Intentionally no state_class: this is a rolling forecast snapshot.
     _attr_icon = "mdi:home-clock-outline"
 
     @property
@@ -211,17 +222,21 @@ class DummyOSHomeForecastSensor(DummyOSBaseSensor):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         slots = self._forecast()
-        known = sum(1 for slot in slots if slot.energy_kwh is not None)
+        populated = sum(1 for slot in slots if slot.energy_kwh is not None)
+        supported = sum(
+            1 for slot in slots if slot.source in {"weekday_quarter", "quarter_of_day"}
+        )
         return {
             "profile": self.coordinator.profile,
             "model": "historical_baseline",
             "model_version": "0.2",
-            "generated_at": dt_util.utcnow().isoformat(),
+            "forecast_start": slots[0].start.isoformat() if slots else None,
             "resolution_minutes": 15,
             "horizon_hours": 72,
             "slot_count": len(slots),
-            "known_slots": known,
-            "coverage_percent": round(known / len(slots) * 100, 1) if slots else 0.0,
+            "populated_slots": populated,
+            "supported_slots": supported,
+            "coverage_percent": round(supported / len(slots) * 100, 1) if slots else 0.0,
             "forecast": HomeBaselineForecast.serialize(slots),
         }
 
@@ -234,7 +249,6 @@ class DummyOSHomeForecastNextQuarterSensor(DummyOSBaseSensor):
     _attr_suggested_object_id = "do_home_forecast_next_quarter"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_device_class = SensorDeviceClass.ENERGY
-    # Intentionally no state_class: this is a forecast snapshot.
     _attr_icon = "mdi:clock-fast"
 
     @property
@@ -259,22 +273,23 @@ class DummyOSHomeForecastNextQuarterSensor(DummyOSBaseSensor):
 
 
 class DummyOSHomeForecastCoverageSensor(DummyOSBaseSensor):
-    """Coverage of the 72-hour baseline forecast."""
+    """Historical support coverage of the 72-hour baseline forecast."""
 
     _attr_name = "Dummy OS Home Forecast Coverage"
     _attr_unique_id = "do_home_forecast_coverage"
     _attr_suggested_object_id = "do_home_forecast_coverage"
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_icon = "mdi:chart-donut"
-    # Intentionally no state_class: this is a forecast dataset quality indicator.
 
     @property
     def native_value(self) -> float:
         slots = self._forecast()
         if not slots:
             return 0.0
-        known = sum(1 for slot in slots if slot.energy_kwh is not None)
-        return round(known / len(slots) * 100, 1)
+        supported = sum(
+            1 for slot in slots if slot.source in {"weekday_quarter", "quarter_of_day"}
+        )
+        return round(supported / len(slots) * 100, 1)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -282,8 +297,14 @@ class DummyOSHomeForecastCoverageSensor(DummyOSBaseSensor):
         sources: dict[str, int] = {}
         for slot in slots:
             sources[slot.source] = sources.get(slot.source, 0) + 1
+        populated = sum(1 for slot in slots if slot.energy_kwh is not None)
+        supported = sum(
+            1 for slot in slots if slot.source in {"weekday_quarter", "quarter_of_day"}
+        )
         return {
             "profile": self.coordinator.profile,
             "slot_count": len(slots),
+            "populated_slots": populated,
+            "supported_slots": supported,
             "source_distribution": sources,
         }
