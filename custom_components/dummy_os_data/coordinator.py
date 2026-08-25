@@ -182,12 +182,10 @@ class DummyOSHomeDataCoordinator:
     async def _finalize_quarter(self, end_utc: datetime) -> None:
         if self._quarter_start is None:
             return
-
         duration = max(1.0, (end_utc - self._quarter_start).total_seconds())
         coverage = min(1.0, self._covered_seconds / duration)
         valid = coverage >= MIN_VALID_COVERAGE and not self._profile_changed_in_quarter
         energy_kwh = self._energy_ws / 3_600_000 if valid else None
-
         result = QuarterResult(
             start=self._quarter_start,
             end=end_utc,
@@ -197,7 +195,6 @@ class DummyOSHomeDataCoordinator:
             valid=valid,
         )
         self.last_quarter = result
-
         self.records.append(
             {
                 "start": result.start.isoformat(),
@@ -216,15 +213,10 @@ class DummyOSHomeDataCoordinator:
     def _capture_next_quarter_forecast(self, now_utc: datetime) -> None:
         """Capture the next complete quarter, useful during setup/profile changes."""
         slots = HomeBaselineForecast(self.records).build(self.profile, now=now_utc)
-        if not slots:
-            return
-        self._store_forecast_snapshot(slots[0], captured_at=now_utc)
+        if slots:
+            self._store_forecast_snapshot(slots[0], captured_at=now_utc)
 
-    def _capture_forecast_for_slot_start(
-        self,
-        slot_start_utc: datetime,
-        captured_at: datetime,
-    ) -> None:
+    def _capture_forecast_for_slot_start(self, slot_start_utc: datetime, captured_at: datetime) -> None:
         """Freeze a forecast for a quarter at the instant that quarter starts."""
         just_before = dt_util.as_utc(slot_start_utc) - timedelta(microseconds=1)
         slots = HomeBaselineForecast(self.records).build(self.profile, now=just_before)
@@ -254,7 +246,7 @@ class DummyOSHomeDataCoordinator:
             "source": slot.source,
             "confidence": slot.confidence,
             "model": "historical_baseline",
-            "model_version": "0.3",
+            "model_version": "0.4",
             "captured_at": dt_util.as_utc(captured_at).isoformat(),
         }
         self._prune_snapshots()
@@ -361,17 +353,12 @@ class DummyOSHomeDataCoordinator:
             value = float(state.state)
         except (TypeError, ValueError):
             return None
-
         unit = state.attributes.get("unit_of_measurement")
         if unit == "kW":
             return value * 1000.0
         if unit == "W" or unit is None:
             return value
-        _LOGGER.warning(
-            "Unsupported unit %s for %s; expected W or kW",
-            unit,
-            state.entity_id,
-        )
+        _LOGGER.warning("Unsupported unit %s for %s; expected W or kW", unit, state.entity_id)
         return None
 
     @property

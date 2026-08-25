@@ -16,6 +16,8 @@ from .const import DOMAIN, FORECAST_SLOTS, NAME, QUARTER_MINUTES, VERSION
 from .coordinator import DummyOSHomeDataCoordinator
 from .forecast import HomeBaselineForecast
 
+SUPPORTED_SOURCES = {"weekday_quarter", "day_type_quarter", "quarter_of_day"}
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -33,6 +35,8 @@ async def async_setup_entry(
             DummyOSHomeForecastSensor(coordinator),
             DummyOSHomeForecastNextQuarterSensor(coordinator),
             DummyOSHomeForecastCoverageSensor(coordinator),
+            DummyOSHomeForecastConfidenceSensor(coordinator),
+            DummyOSHomeForecastModelHealthSensor(coordinator),
             DummyOSHomeForecastAccuracySensor(coordinator),
             DummyOSHomeForecastMaeSensor(coordinator),
             DummyOSHomeForecastBiasSensor(coordinator),
@@ -196,9 +200,11 @@ class DummyOSForecastModelSensor(DummyOSBaseSensor):
     def extra_state_attributes(self) -> dict[str, Any]:
         model = HomeBaselineForecast(self.coordinator.records)
         return {
-            "model_version": "0.3",
+            "model_version": "0.4",
             "forecast_active": True,
             "evaluation_active": True,
+            "recency_weighting_active": True,
+            "day_type_active": True,
             "resolution_minutes": 15,
             "horizon_hours": 72,
             "forecast_slots": FORECAST_SLOTS,
@@ -208,7 +214,7 @@ class DummyOSForecastModelSensor(DummyOSBaseSensor):
 
 
 class DummyOSHomeForecastSensor(DummyOSBaseSensor):
-    """Rolling 72-hour home-consumption baseline forecast summary."""
+    """Rolling 72-hour home-consumption forecast summary."""
 
     _attr_name = "Dummy OS Home Forecast"
     _attr_unique_id = "do_home_forecast"
@@ -219,21 +225,18 @@ class DummyOSHomeForecastSensor(DummyOSBaseSensor):
 
     @property
     def native_value(self) -> float | None:
-        slots = self._forecast()
-        values = [slot.energy_kwh for slot in slots if slot.energy_kwh is not None]
+        values = [slot.energy_kwh for slot in self._forecast() if slot.energy_kwh is not None]
         return round(sum(values), 3) if values else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         slots = self._forecast()
         populated = sum(1 for slot in slots if slot.energy_kwh is not None)
-        supported = sum(
-            1 for slot in slots if slot.source in {"weekday_quarter", "quarter_of_day"}
-        )
+        supported = sum(1 for slot in slots if slot.source in SUPPORTED_SOURCES)
         return {
             "profile": self.coordinator.profile,
             "model": "historical_baseline",
-            "model_version": "0.3",
+            "model_version": "0.4",
             "forecast_start": slots[0].start.isoformat() if slots else None,
             "resolution_minutes": 15,
             "horizon_hours": 72,
@@ -241,6 +244,7 @@ class DummyOSHomeForecastSensor(DummyOSBaseSensor):
             "populated_slots": populated,
             "supported_slots": supported,
             "coverage_percent": round(supported / len(slots) * 100, 1) if slots else 0.0,
+            "average_confidence_percent": HomeBaselineForecast.average_confidence(slots),
             "timeline_storage": "internal_only",
         }
 
@@ -277,7 +281,7 @@ class DummyOSHomeForecastNextQuarterSensor(DummyOSBaseSensor):
 
 
 class DummyOSHomeForecastCoverageSensor(DummyOSBaseSensor):
-    """Historical support coverage of the 72-hour baseline forecast."""
+    """Historical support coverage of the 72-hour forecast."""
 
     _attr_name = "Dummy OS Home Forecast Coverage"
     _attr_unique_id = "do_home_forecast_coverage"
@@ -290,9 +294,7 @@ class DummyOSHomeForecastCoverageSensor(DummyOSBaseSensor):
         slots = self._forecast()
         if not slots:
             return 0.0
-        supported = sum(
-            1 for slot in slots if slot.source in {"weekday_quarter", "quarter_of_day"}
-        )
+        supported = sum(1 for slot in slots if slot.source in SUPPORTED_SOURCES)
         return round(supported / len(slots) * 100, 1)
 
     @property
@@ -302,15 +304,82 @@ class DummyOSHomeForecastCoverageSensor(DummyOSBaseSensor):
         for slot in slots:
             sources[slot.source] = sources.get(slot.source, 0) + 1
         populated = sum(1 for slot in slots if slot.energy_kwh is not None)
-        supported = sum(
-            1 for slot in slots if slot.source in {"weekday_quarter", "quarter_of_day"}
-        )
+        supported = sum(1 for slot in slots if slot.source in SUPPORTED_SOURCES)
         return {
             "profile": self.coordinator.profile,
             "slot_count": len(slots),
             "populated_slots": populated,
             "supported_slots": supported,
             "source_distribution": sources,
+        }
+
+
+class DummyOSHomeForecastConfidenceSensor(DummyOSBaseSensor):
+    """Average confidence of the active 72-hour Home Forecast."""
+
+    _attr_name = "Dummy OS Home Forecast Confidence"
+    _attr_unique_id = "do_home_forecast_confidence"
+    _attr_suggested_object_id = "do_home_forecast_confidence"
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_icon = "mdi:shield-check-outline"
+
+    @property
+    def native_value(self) -> float | None:
+        return HomeBaselineForecast.average_confidence(self._forecast())
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        slots = self._forecast()
+        return {
+            "profile": self.coordinator.profile,
+            "slot_count": len(slots),
+            "model_version": "0.4",
+            "confidence_basis": "historical_source_and_sample_support",
+        }
+
+
+class DummyOSHomeForecastModelHealthSensor(DummyOSBaseSensor):
+    """Maturity/health status of the active Home Forecast model."""
+
+    _attr_name = "Dummy OS Home Forecast Model Health"
+    _attr_unique_id = "do_home_forecast_model_health"
+    _attr_suggested_object_id = "do_home_forecast_model_health"
+    _attr_icon = "mdi:heart-pulse"
+
+    @property
+    def native_value(self) -> str:
+        slots = self._forecast()
+        if not self.coordinator.source_available:
+            return "source_unavailable"
+        if self.coordinator.valid_quarters == 0:
+            return "collecting"
+        coverage = 0.0
+        if slots:
+            coverage = sum(1 for slot in slots if slot.source in SUPPORTED_SOURCES) / len(slots)
+        samples = int(self.coordinator.evaluation_metrics(self.coordinator.profile)["samples"])
+        confidence = HomeBaselineForecast.average_confidence(slots) or 0.0
+        if coverage >= 0.80 and samples >= 96 and confidence >= 65.0:
+            return "strong"
+        if coverage >= 0.40 and samples >= 32 and confidence >= 45.0:
+            return "usable"
+        return "learning"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        slots = self._forecast()
+        supported = sum(1 for slot in slots if slot.source in SUPPORTED_SOURCES)
+        metrics = self.coordinator.evaluation_metrics(self.coordinator.profile)
+        return {
+            "profile": self.coordinator.profile,
+            "model_version": "0.4",
+            "forecast_coverage_percent": round(supported / len(slots) * 100, 1) if slots else 0.0,
+            "average_confidence_percent": HomeBaselineForecast.average_confidence(slots),
+            "evaluation_samples": metrics["samples"],
+            "accuracy_percent": metrics["accuracy_percent"],
+            "health_thresholds": {
+                "usable": "coverage>=40%, samples>=32, confidence>=45%",
+                "strong": "coverage>=80%, samples>=96, confidence>=65%",
+            },
         }
 
 

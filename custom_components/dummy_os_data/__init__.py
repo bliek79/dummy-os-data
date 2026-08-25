@@ -24,6 +24,8 @@ _ENTITY_ID_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("sensor", "do_home_forecast", "sensor.do_home_forecast"),
     ("sensor", "do_home_forecast_next_quarter", "sensor.do_home_forecast_next_quarter"),
     ("sensor", "do_home_forecast_coverage", "sensor.do_home_forecast_coverage"),
+    ("sensor", "do_home_forecast_confidence", "sensor.do_home_forecast_confidence"),
+    ("sensor", "do_home_forecast_model_health", "sensor.do_home_forecast_model_health"),
     ("sensor", "do_home_forecast_accuracy", "sensor.do_home_forecast_accuracy"),
     ("sensor", "do_home_forecast_mae", "sensor.do_home_forecast_mae"),
     ("sensor", "do_home_forecast_bias", "sensor.do_home_forecast_bias"),
