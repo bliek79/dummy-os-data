@@ -153,7 +153,11 @@ class DummyOSHomeDataCoordinator:
         self._start_new_quarter(now_utc)
         self._last_power_w = self._power_from_state(self.source_state)
         self._last_sample_time = now_utc
-        self._capture_forecast_for_slot_start(now_utc, captured_at=now_utc)
+        if self._quarter_start is not None:
+            self._capture_forecast_for_slot_start(
+                self._quarter_start,
+                captured_at=now_utc,
+            )
         await self._async_save()
         self._notify()
 
