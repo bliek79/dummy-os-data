@@ -85,12 +85,14 @@ class HomeBaselineForecast:
         exact, quarter, all_values = self._history(profile)
         now_local = dt_util.as_local(now or dt_util.utcnow())
         minute = (now_local.minute // QUARTER_MINUTES) * QUARTER_MINUTES
-        start_local = now_local.replace(minute=minute, second=0, microsecond=0) + timedelta(minutes=QUARTER_MINUTES)
+        next_local = now_local.replace(minute=minute, second=0, microsecond=0) + timedelta(minutes=QUARTER_MINUTES)
+        start_utc = dt_util.as_utc(next_local)
 
         result: list[ForecastSlot] = []
         for offset in range(FORECAST_SLOTS):
-            slot_start_local = start_local + timedelta(minutes=offset * QUARTER_MINUTES)
-            slot_end_local = slot_start_local + timedelta(minutes=QUARTER_MINUTES)
+            slot_start_utc = start_utc + timedelta(minutes=offset * QUARTER_MINUTES)
+            slot_end_utc = slot_start_utc + timedelta(minutes=QUARTER_MINUTES)
+            slot_start_local = dt_util.as_local(slot_start_utc)
             qidx = self._quarter_index(slot_start_local)
             exact_values = exact.get((slot_start_local.weekday(), qidx), [])
             quarter_values = quarter.get(qidx, [])
@@ -118,8 +120,8 @@ class HomeBaselineForecast:
 
             result.append(
                 ForecastSlot(
-                    start=dt_util.as_utc(slot_start_local),
-                    end=dt_util.as_utc(slot_end_local),
+                    start=slot_start_utc,
+                    end=slot_end_utc,
                     energy_kwh=round(value, 6) if value is not None else None,
                     sample_count=samples,
                     source=source,
