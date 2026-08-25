@@ -24,6 +24,14 @@ _ENTITY_ID_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("sensor", "do_home_forecast", "sensor.do_home_forecast"),
     ("sensor", "do_home_forecast_next_quarter", "sensor.do_home_forecast_next_quarter"),
     ("sensor", "do_home_forecast_coverage", "sensor.do_home_forecast_coverage"),
+    ("sensor", "do_home_forecast_accuracy", "sensor.do_home_forecast_accuracy"),
+    ("sensor", "do_home_forecast_mae", "sensor.do_home_forecast_mae"),
+    ("sensor", "do_home_forecast_bias", "sensor.do_home_forecast_bias"),
+    (
+        "sensor",
+        "do_home_forecast_evaluation_samples",
+        "sensor.do_home_forecast_evaluation_samples",
+    ),
     ("select", "do_home_profile", "select.do_home_profile"),
 )
 
@@ -41,7 +49,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry) 
 
 
 def _async_migrate_generated_entity_ids(hass: HomeAssistant) -> None:
-    """Migrate only the known alpha.1/alpha.2 generated entity IDs.
+    """Migrate only known automatically generated Dummy OS Data entity IDs.
 
     Unique IDs stay unchanged, so registry identity and history are preserved.
     User-customized entity IDs are deliberately left untouched.
