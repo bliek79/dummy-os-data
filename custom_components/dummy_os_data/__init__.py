@@ -30,11 +30,21 @@ _ENTITY_ID_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("sensor", "do_home_forecast_accuracy", "sensor.do_home_forecast_accuracy"),
     ("sensor", "do_home_forecast_mae", "sensor.do_home_forecast_mae"),
     ("sensor", "do_home_forecast_bias", "sensor.do_home_forecast_bias"),
-    (
-        "sensor",
-        "do_home_forecast_evaluation_samples",
-        "sensor.do_home_forecast_evaluation_samples",
-    ),
+    ("sensor", "do_home_forecast_evaluation_samples", "sensor.do_home_forecast_evaluation_samples"),
+    ("sensor", "do_weather_temperature", "sensor.do_weather_temperature"),
+    ("sensor", "do_weather_apparent_temperature", "sensor.do_weather_apparent_temperature"),
+    ("sensor", "do_weather_relative_humidity", "sensor.do_weather_relative_humidity"),
+    ("sensor", "do_weather_precipitation", "sensor.do_weather_precipitation"),
+    ("sensor", "do_weather_cloud_cover", "sensor.do_weather_cloud_cover"),
+    ("sensor", "do_weather_wind_speed", "sensor.do_weather_wind_speed"),
+    ("sensor", "do_weather_wind_direction", "sensor.do_weather_wind_direction"),
+    ("sensor", "do_weather_wind_gusts", "sensor.do_weather_wind_gusts"),
+    ("sensor", "do_weather_weather_code", "sensor.do_weather_weather_code"),
+    ("sensor", "do_weather_forecast_timeline", "sensor.do_weather_forecast_timeline"),
+    ("sensor", "do_weather_source_status", "sensor.do_weather_source_status"),
+    ("sensor", "do_weather_source_freshness", "sensor.do_weather_source_freshness"),
+    ("sensor", "do_weather_last_update", "sensor.do_weather_last_update"),
+    ("sensor", "do_weather_model", "sensor.do_weather_model"),
     ("select", "do_home_profile", "select.do_home_profile"),
 )
 
@@ -52,11 +62,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry) 
 
 
 def _async_migrate_generated_entity_ids(hass: HomeAssistant) -> None:
-    """Migrate only known automatically generated Dummy OS Data entity IDs.
-
-    Unique IDs stay unchanged, so registry identity and history are preserved.
-    User-customized entity IDs are deliberately left untouched.
-    """
+    """Migrate only known automatically generated Dummy OS Data entity IDs."""
     registry = er.async_get(hass)
 
     for platform, unique_id, target_entity_id in _ENTITY_ID_MIGRATIONS:
