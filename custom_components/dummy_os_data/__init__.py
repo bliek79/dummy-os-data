@@ -49,8 +49,26 @@ _ENTITY_ID_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
 )
 
 
+def _apply_entity_name_policy() -> None:
+    """Keep visible entity names exactly as defined by Dummy OS Data.
+
+    Home Assistant otherwise prefixes the device name ("Dummy OS Data") to
+    entity names that already start with "Dummy OS", resulting in duplicate
+    friendly names such as "Dummy OS Data Dummy OS Weather Temperature".
+    Entity IDs and unique IDs are deliberately unaffected.
+    """
+    from .select import DummyOSHomeProfileSelect
+    from .sensor import DummyOSBaseSensor, DummyOSWeatherBaseSensor
+
+    DummyOSBaseSensor._attr_has_entity_name = False
+    DummyOSWeatherBaseSensor._attr_has_entity_name = False
+    DummyOSHomeProfileSelect._attr_has_entity_name = False
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry) -> bool:
     """Set up Dummy OS Data from a config entry."""
+    _apply_entity_name_policy()
+
     coordinator = DummyOSHomeDataCoordinator(hass, entry)
     await coordinator.async_setup()
     entry.runtime_data = coordinator
