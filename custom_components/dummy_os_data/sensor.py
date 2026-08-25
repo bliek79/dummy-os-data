@@ -204,7 +204,7 @@ class DummyOSForecastModelSensor(DummyOSBaseSensor):
 
 
 class DummyOSHomeForecastSensor(DummyOSBaseSensor):
-    """Rolling 72-hour home-consumption baseline forecast."""
+    """Rolling 72-hour home-consumption baseline forecast summary."""
 
     _attr_name = "Dummy OS Home Forecast"
     _attr_unique_id = "do_home_forecast"
@@ -237,7 +237,7 @@ class DummyOSHomeForecastSensor(DummyOSBaseSensor):
             "populated_slots": populated,
             "supported_slots": supported,
             "coverage_percent": round(supported / len(slots) * 100, 1) if slots else 0.0,
-            "forecast": HomeBaselineForecast.serialize(slots),
+            "timeline_storage": "internal_only",
         }
 
 
