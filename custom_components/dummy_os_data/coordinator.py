@@ -15,11 +15,9 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_HOME_POWER_ENTITY,
-    DOMAIN,
     MAX_HISTORY_DAYS,
     MIN_VALID_COVERAGE,
     PROFILE_NORMAL,
-    QUARTER_SECONDS,
     STORAGE_KEY,
     STORAGE_VERSION,
 )
@@ -125,7 +123,7 @@ class DummyOSHomeDataCoordinator:
 
     @callback
     def _async_source_changed(self, event: Event[EventStateChangedData]) -> None:
-        """Integrate power until source state change."""
+        """Integrate power until source state change and refresh availability state."""
         now = dt_util.utcnow()
         self._integrate_until(now)
         new_state = event.data.get("new_state")
@@ -174,7 +172,6 @@ class DummyOSHomeDataCoordinator:
             return
 
         duration = max(1.0, (end_utc - self._quarter_start).total_seconds())
-        # DST-safe: evaluate against the actual interval duration, but cap display coverage at 100%.
         coverage = min(1.0, self._covered_seconds / duration)
         valid = coverage >= MIN_VALID_COVERAGE and not self._profile_changed_in_quarter
         energy_kwh = self._energy_ws / 3_600_000 if valid else None
