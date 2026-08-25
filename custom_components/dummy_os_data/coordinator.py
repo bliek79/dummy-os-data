@@ -22,7 +22,7 @@ from .const import (
     STORAGE_VERSION,
 )
 from .evaluation import calculate_metrics
-from .forecast import HomeBaselineForecast
+from .forecast import ForecastSlot, HomeBaselineForecast
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -83,12 +83,14 @@ class DummyOSHomeDataCoordinator:
         self.forecast_snapshots = stored.get("forecast_snapshots", {})
         self.evaluations = stored.get("evaluations", [])
         self._prune_records()
+        self._prune_snapshots()
         self._prune_evaluations()
 
         now = dt_util.utcnow()
         self._start_new_quarter(now)
         self._set_initial_power(now)
         self._capture_next_quarter_forecast(now)
+        await self._async_save()
 
         self._unsubs.append(
             async_track_state_change_event(
@@ -140,14 +142,14 @@ class DummyOSHomeDataCoordinator:
         self._notify()
 
     async def _async_quarter_boundary(self, now: datetime) -> None:
-        """Finalize the just-completed local quarter."""
+        """Finalize the completed quarter and freeze forecast for the new one."""
         now_utc = dt_util.as_utc(now)
         self._integrate_until(now_utc)
         await self._finalize_quarter(now_utc)
         self._start_new_quarter(now_utc)
         self._last_power_w = self._power_from_state(self.source_state)
         self._last_sample_time = now_utc
-        self._capture_next_quarter_forecast(now_utc)
+        self._capture_forecast_for_slot_start(now_utc, captured_at=now_utc)
         await self._async_save()
         self._notify()
 
@@ -212,11 +214,34 @@ class DummyOSHomeDataCoordinator:
         await self._async_save()
 
     def _capture_next_quarter_forecast(self, now_utc: datetime) -> None:
-        """Persist the forecast for the next 15-minute slot before it occurs."""
+        """Capture the next complete quarter, useful during setup/profile changes."""
         slots = HomeBaselineForecast(self.records).build(self.profile, now=now_utc)
         if not slots:
             return
+        self._store_forecast_snapshot(slots[0], captured_at=now_utc)
+
+    def _capture_forecast_for_slot_start(
+        self,
+        slot_start_utc: datetime,
+        captured_at: datetime,
+    ) -> None:
+        """Freeze a forecast for a quarter at the instant that quarter starts."""
+        just_before = dt_util.as_utc(slot_start_utc) - timedelta(microseconds=1)
+        slots = HomeBaselineForecast(self.records).build(self.profile, now=just_before)
+        if not slots:
+            return
         slot = slots[0]
+        if slot.start != dt_util.as_utc(slot_start_utc):
+            _LOGGER.warning(
+                "Forecast snapshot timing mismatch: expected %s, got %s",
+                dt_util.as_utc(slot_start_utc).isoformat(),
+                slot.start.isoformat(),
+            )
+            return
+        self._store_forecast_snapshot(slot, captured_at=captured_at)
+
+    def _store_forecast_snapshot(self, slot: ForecastSlot, captured_at: datetime) -> None:
+        """Store one compact pre-actual forecast snapshot."""
         if slot.energy_kwh is None:
             return
         key = slot.start.isoformat()
@@ -229,8 +254,8 @@ class DummyOSHomeDataCoordinator:
             "source": slot.source,
             "confidence": slot.confidence,
             "model": "historical_baseline",
-            "model_version": "0.2",
-            "captured_at": dt_util.as_utc(now_utc).isoformat(),
+            "model_version": "0.3",
+            "captured_at": dt_util.as_utc(captured_at).isoformat(),
         }
         self._prune_snapshots()
 
