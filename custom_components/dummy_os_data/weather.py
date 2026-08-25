@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -15,7 +15,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util import dt as dt_util
 
-from .const import FORECAST_SLOTS
+from .const import FORECAST_SLOTS, QUARTER_MINUTES
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,69 +26,27 @@ OPEN_METEO_TIMEZONE = "Europe/Berlin"
 OPEN_METEO_MODEL = "best_match"
 
 CURRENT_VARIABLES = (
-    "temperature_2m",
-    "relative_humidity_2m",
-    "apparent_temperature",
-    "precipitation",
-    "weather_code",
-    "cloud_cover",
-    "wind_speed_10m",
-    "wind_direction_10m",
-    "wind_gusts_10m",
+    "temperature_2m", "relative_humidity_2m", "apparent_temperature",
+    "precipitation", "weather_code", "cloud_cover", "wind_speed_10m",
+    "wind_direction_10m", "wind_gusts_10m",
 )
 
 MINUTELY_15_VARIABLES = (
-    "temperature_2m",
-    "relative_humidity_2m",
-    "dew_point_2m",
-    "apparent_temperature",
-    "precipitation",
-    "rain",
-    "weather_code",
-    "wind_speed_10m",
-    "wind_direction_10m",
-    "wind_gusts_10m",
-    "shortwave_radiation",
-    "sunshine_duration",
-    "diffuse_radiation",
-    "direct_normal_irradiance",
-    "is_day",
-    "direct_radiation",
+    "temperature_2m", "relative_humidity_2m", "dew_point_2m",
+    "apparent_temperature", "precipitation", "rain", "weather_code",
+    "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m",
+    "shortwave_radiation", "sunshine_duration", "diffuse_radiation",
+    "direct_normal_irradiance", "is_day", "direct_radiation",
 )
 
 DAILY_VARIABLES = (
-    "weather_code",
-    "temperature_2m_max",
-    "temperature_2m_min",
-    "sunrise",
-    "sunset",
-    "daylight_duration",
-    "sunshine_duration",
-    "precipitation_sum",
-    "precipitation_hours",
-    "wind_speed_10m_max",
-    "wind_gusts_10m_max",
+    "weather_code", "temperature_2m_max", "temperature_2m_min", "sunrise",
+    "sunset", "daylight_duration", "sunshine_duration", "precipitation_sum",
+    "precipitation_hours", "wind_speed_10m_max", "wind_gusts_10m_max",
     "shortwave_radiation_sum",
 )
 
-POINT_FIELDS = (
-    "temperature_2m",
-    "relative_humidity_2m",
-    "dew_point_2m",
-    "apparent_temperature",
-    "precipitation",
-    "rain",
-    "weather_code",
-    "wind_speed_10m",
-    "wind_direction_10m",
-    "wind_gusts_10m",
-    "shortwave_radiation",
-    "sunshine_duration",
-    "diffuse_radiation",
-    "direct_normal_irradiance",
-    "is_day",
-    "direct_radiation",
-)
+POINT_FIELDS = MINUTELY_15_VARIABLES
 
 
 class DummyOSWeatherCoordinator:
@@ -110,25 +68,18 @@ class DummyOSWeatherCoordinator:
         self._unsubs: list[Any] = []
 
     async def async_setup(self) -> None:
-        """Fetch immediately and then refresh on each whole hour."""
+        """Fetch immediately and refresh on the whole hour."""
         await self.async_refresh()
         self._unsubs.append(
-            async_track_time_change(
-                self.hass,
-                self._async_hourly_refresh,
-                minute=0,
-                second=5,
-            )
+            async_track_time_change(self.hass, self._async_hourly_refresh, minute=0, second=5)
         )
 
     async def async_shutdown(self) -> None:
-        """Stop scheduled refreshes."""
         for unsub in self._unsubs:
             unsub()
         self._unsubs.clear()
 
     def async_add_listener(self, listener: callback) -> callback:
-        """Add a state update listener."""
         self.listeners.append(listener)
 
         @callback
@@ -147,32 +98,40 @@ class DummyOSWeatherCoordinator:
         await self.async_refresh()
 
     async def async_refresh(self) -> None:
-        """Fetch the current Open-Meteo source snapshot."""
-        self.last_attempt = dt_util.utcnow()
+        """Fetch Open-Meteo with short retry/backoff while retaining last good data."""
         params = {
             "latitude": OPEN_METEO_LATITUDE,
             "longitude": OPEN_METEO_LONGITUDE,
             "current": ",".join(CURRENT_VARIABLES),
             "minutely_15": ",".join(MINUTELY_15_VARIABLES),
             "daily": ",".join(DAILY_VARIABLES),
-            "forecast_minutely_15": FORECAST_SLOTS,
+            # Request one spare slot because Dummy OS starts at the next full quarter.
+            "forecast_minutely_15": FORECAST_SLOTS + 1,
             "timezone": OPEN_METEO_TIMEZONE,
         }
         session = async_get_clientsession(self.hass)
-        try:
-            async with session.get(OPEN_METEO_ENDPOINT, params=params, timeout=20) as response:
-                response.raise_for_status()
-                payload = await response.json()
-            self._apply_payload(payload)
-            self.last_successful_update = dt_util.utcnow()
-            self.last_error = None
-        except (ClientError, asyncio.TimeoutError, ValueError, TypeError, KeyError) as err:
-            self.last_error = f"{type(err).__name__}: {err}"
-            _LOGGER.warning("Open-Meteo weather refresh failed: %s", self.last_error)
+        last_error: Exception | None = None
+        for attempt, delay in enumerate((0, 5, 15), start=1):
+            if delay:
+                await asyncio.sleep(delay)
+            self.last_attempt = dt_util.utcnow()
+            try:
+                async with session.get(OPEN_METEO_ENDPOINT, params=params, timeout=20) as response:
+                    response.raise_for_status()
+                    payload = await response.json()
+                self._apply_payload(payload)
+                self.last_successful_update = dt_util.utcnow()
+                self.last_error = None
+                self._notify()
+                return
+            except (ClientError, asyncio.TimeoutError, ValueError, TypeError, KeyError) as err:
+                last_error = err
+                _LOGGER.warning("Open-Meteo refresh attempt %s/3 failed: %s", attempt, err)
+
+        self.last_error = f"{type(last_error).__name__}: {last_error}" if last_error else "unknown_error"
         self._notify()
 
     def _apply_payload(self, payload: dict[str, Any]) -> None:
-        """Validate and normalize one Open-Meteo response."""
         current = payload.get("current")
         minutely = payload.get("minutely_15")
         if not isinstance(current, dict) or not isinstance(minutely, dict):
@@ -182,28 +141,39 @@ class DummyOSWeatherCoordinator:
         if not isinstance(times, list):
             raise ValueError("Open-Meteo response missing minutely_15 time axis")
 
+        # Rolling Dummy OS timeline starts at the next complete local quarter.
+        local_now = dt_util.as_local(dt_util.utcnow())
+        base = local_now.replace(second=0, microsecond=0)
+        minute = (base.minute // QUARTER_MINUTES) * QUARTER_MINUTES
+        quarter_floor = base.replace(minute=minute)
+        next_quarter_local = quarter_floor if base == quarter_floor else quarter_floor + timedelta(minutes=QUARTER_MINUTES)
+        cutoff_utc = dt_util.as_utc(next_quarter_local)
+
         timezone = ZoneInfo(OPEN_METEO_TIMEZONE)
         points: list[list[Any]] = []
-        for index, raw_time in enumerate(times[:FORECAST_SLOTS]):
+        for index, raw_time in enumerate(times):
             if not isinstance(raw_time, str):
                 continue
             local_dt = datetime.fromisoformat(raw_time)
             if local_dt.tzinfo is None:
                 local_dt = local_dt.replace(tzinfo=timezone)
-            timestamp_ms = int(local_dt.astimezone(dt_util.UTC).timestamp() * 1000)
-            values: list[Any] = [timestamp_ms]
-            complete = True
+            utc_dt = local_dt.astimezone(dt_util.UTC)
+            if utc_dt < cutoff_utc:
+                continue
+
+            values: list[Any] = [int(utc_dt.timestamp() * 1000)]
             for field in POINT_FIELDS:
                 series = minutely.get(field)
                 if not isinstance(series, list) or index >= len(series):
-                    complete = False
                     break
                 values.append(series[index])
-            if complete:
+            if len(values) == len(POINT_FIELDS) + 1:
                 points.append(values)
+            if len(points) >= FORECAST_SLOTS:
+                break
 
-        if not points:
-            raise ValueError("Open-Meteo response produced no usable 15-minute points")
+        if len(points) != FORECAST_SLOTS:
+            raise ValueError(f"Open-Meteo produced {len(points)} usable slots; expected {FORECAST_SLOTS}")
 
         self.current = current
         self.timeline = points
@@ -238,28 +208,25 @@ class DummyOSWeatherCoordinator:
 
     @property
     def source_status(self) -> str:
-        """Return compact source health."""
         if self.last_successful_update is None:
             return "error" if self.last_error else "not_loaded"
         age = self.age_minutes
         if age is None:
             return "not_loaded"
-        if self.last_error and age >= 90:
-            return "stale"
         if age >= 180:
             return "expired"
+        if self.last_error or age >= 90:
+            return "stale"
         return "ok"
 
     @property
     def age_minutes(self) -> float | None:
-        """Age of the last successful source update."""
         if self.last_successful_update is None:
             return None
         return round(max(0.0, (dt_util.utcnow() - self.last_successful_update).total_seconds()) / 60.0, 1)
 
     @property
     def freshness(self) -> str:
-        """Human-readable source freshness state."""
         age = self.age_minutes
         if age is None:
             return "unknown"
