@@ -115,6 +115,11 @@ class HomeBaselineForecast:
         exact, day_type, quarter, all_values = self._history(profile)
         reference = dt_util.utcnow()
         weighted_mean = self._weighted_mean(all_values, reference)
+        simple_mean = (
+            sum(sample.energy_kwh for sample in all_values) / len(all_values)
+            if all_values
+            else None
+        )
         return {
             "profile": profile,
             "valid_samples": len(all_values),
@@ -124,6 +129,7 @@ class HomeBaselineForecast:
             "day_type_quarter_coverage": round(len(day_type) / (2 * 96), 4),
             "quarter_cells": len(quarter),
             "quarter_coverage": round(len(quarter) / 96, 4),
+            "mean_quarter_kwh": round(simple_mean, 6) if simple_mean is not None else None,
             "weighted_mean_quarter_kwh": round(weighted_mean, 6) if weighted_mean is not None else None,
             "recency_half_life_days": RECENCY_HALF_LIFE_DAYS,
         }
