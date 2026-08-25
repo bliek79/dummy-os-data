@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfEnergy
+from homeassistant.const import PERCENTAGE, UnitOfEnergy
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, NAME, VERSION
+from .const import DOMAIN, FORECAST_SLOTS, NAME, VERSION
 from .coordinator import DummyOSHomeDataCoordinator
+from .forecast import HomeBaselineForecast
 
 
 async def async_setup_entry(
@@ -29,6 +30,9 @@ async def async_setup_entry(
             DummyOSHistoryStatusSensor(coordinator),
             DummyOSHistoryDaysSensor(coordinator),
             DummyOSForecastModelSensor(coordinator),
+            DummyOSHomeForecastSensor(coordinator),
+            DummyOSHomeForecastNextQuarterSensor(coordinator),
+            DummyOSHomeForecastCoverageSensor(coordinator),
         ]
     )
 
@@ -66,6 +70,9 @@ class DummyOSBaseSensor(SensorEntity):
     @callback
     def _handle_update(self) -> None:
         self.async_write_ha_state()
+
+    def _forecast(self):
+        return HomeBaselineForecast(self.coordinator.records).build(self.coordinator.profile)
 
 
 class DummyOSActualQuarterSensor(DummyOSBaseSensor):
@@ -123,6 +130,7 @@ class DummyOSHistoryStatusSensor(DummyOSBaseSensor):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
+        model = HomeBaselineForecast(self.coordinator.records)
         return {
             "source_entity": self.coordinator.source_entity,
             "source_available": self.coordinator.source_available,
@@ -130,6 +138,7 @@ class DummyOSHistoryStatusSensor(DummyOSBaseSensor):
             "history_days": self.coordinator.history_days,
             "profile": self.coordinator.profile,
             "storage_limit_days": 400,
+            "profile_statistics": model.all_profile_statistics(),
         }
 
 
@@ -165,15 +174,116 @@ class DummyOSForecastModelSensor(DummyOSBaseSensor):
 
     @property
     def native_value(self) -> str:
-        return "historical_foundation"
+        return "historical_baseline"
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
+        model = HomeBaselineForecast(self.coordinator.records)
         return {
-            "model_version": "0.1",
-            "forecast_active": False,
+            "model_version": "0.2",
+            "forecast_active": True,
             "evaluation_active": False,
             "resolution_minutes": 15,
             "horizon_hours": 72,
+            "forecast_slots": FORECAST_SLOTS,
             "profile": self.coordinator.profile,
+            "profile_statistics": model.profile_statistics(self.coordinator.profile),
+        }
+
+
+class DummyOSHomeForecastSensor(DummyOSBaseSensor):
+    """Rolling 72-hour home-consumption baseline forecast."""
+
+    _attr_name = "Dummy OS Home Forecast"
+    _attr_unique_id = "do_home_forecast"
+    _attr_suggested_object_id = "do_home_forecast"
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_device_class = SensorDeviceClass.ENERGY
+    # Intentionally no state_class: this is a rolling forecast snapshot.
+    _attr_icon = "mdi:home-clock-outline"
+
+    @property
+    def native_value(self) -> float | None:
+        slots = self._forecast()
+        values = [slot.energy_kwh for slot in slots if slot.energy_kwh is not None]
+        return round(sum(values), 3) if values else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        slots = self._forecast()
+        known = sum(1 for slot in slots if slot.energy_kwh is not None)
+        return {
+            "profile": self.coordinator.profile,
+            "model": "historical_baseline",
+            "model_version": "0.2",
+            "generated_at": dt_util.utcnow().isoformat(),
+            "resolution_minutes": 15,
+            "horizon_hours": 72,
+            "slot_count": len(slots),
+            "known_slots": known,
+            "coverage_percent": round(known / len(slots) * 100, 1) if slots else 0.0,
+            "forecast": HomeBaselineForecast.serialize(slots),
+        }
+
+
+class DummyOSHomeForecastNextQuarterSensor(DummyOSBaseSensor):
+    """Forecast energy for the next 15-minute slot."""
+
+    _attr_name = "Dummy OS Home Forecast Next Quarter"
+    _attr_unique_id = "do_home_forecast_next_quarter"
+    _attr_suggested_object_id = "do_home_forecast_next_quarter"
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_device_class = SensorDeviceClass.ENERGY
+    # Intentionally no state_class: this is a forecast snapshot.
+    _attr_icon = "mdi:clock-fast"
+
+    @property
+    def native_value(self) -> float | None:
+        slots = self._forecast()
+        return slots[0].energy_kwh if slots else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        slots = self._forecast()
+        if not slots:
+            return {"status": "unavailable", "profile": self.coordinator.profile}
+        slot = slots[0]
+        return {
+            "period_start": slot.start.isoformat(),
+            "period_end": slot.end.isoformat(),
+            "profile": self.coordinator.profile,
+            "sample_count": slot.sample_count,
+            "source": slot.source,
+            "confidence": slot.confidence,
+        }
+
+
+class DummyOSHomeForecastCoverageSensor(DummyOSBaseSensor):
+    """Coverage of the 72-hour baseline forecast."""
+
+    _attr_name = "Dummy OS Home Forecast Coverage"
+    _attr_unique_id = "do_home_forecast_coverage"
+    _attr_suggested_object_id = "do_home_forecast_coverage"
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_icon = "mdi:chart-donut"
+    # Intentionally no state_class: this is a forecast dataset quality indicator.
+
+    @property
+    def native_value(self) -> float:
+        slots = self._forecast()
+        if not slots:
+            return 0.0
+        known = sum(1 for slot in slots if slot.energy_kwh is not None)
+        return round(known / len(slots) * 100, 1)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        slots = self._forecast()
+        sources: dict[str, int] = {}
+        for slot in slots:
+            sources[slot.source] = sources.get(slot.source, 0) + 1
+        return {
+            "profile": self.coordinator.profile,
+            "slot_count": len(slots),
+            "source_distribution": sources,
         }
