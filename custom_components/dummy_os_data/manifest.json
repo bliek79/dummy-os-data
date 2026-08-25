@@ -3,9 +3,9 @@
   "name": "Dummy OS Data",
   "codeowners": [],
   "config_flow": true,
-  "documentation": "https://github.com/dummy-os/dummy-os-data",
+  "documentation": "https://github.com/bliek79/dummy-os-data",
   "integration_type": "service",
   "iot_class": "calculated",
   "requirements": [],
-  "version": "0.1.0-alpha.1"
+  "version": "0.1.0-alpha.2"
 }
