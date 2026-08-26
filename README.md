@@ -18,7 +18,7 @@ Its role is to:
 - generate forecasts;
 - evaluate forecast quality against actual measurements;
 - expose source quality and freshness;
-- provide Recorder-safe timeline interfaces for dashboards and future planning logic.
+- provide stable timeline interfaces for dashboards and future planning logic.
 
 Dummy OS EMS is intentionally a separate layer. EMS should consume normalized data and forecasts from Dummy OS Data rather than duplicate source-specific logic.
 
@@ -31,9 +31,11 @@ The integration uses these design principles:
 - **288 forecast slots**
 - **stable entity IDs and unique IDs**
 - **source-quality and freshness monitoring**
-- **large live timelines excluded from Recorder attributes**
 - **forecast evaluation before model factors are promoted into production use**
 - **separate Normal and Away Home Forecast histories**
+- **market prices separated from tariff composition**
+- **import and export tariffs modeled independently for 2027 compatibility**
+- **tariff profiles are versionable and historical tariff snapshots must remain immutable**
 
 Planned and current modules are organized around the same architecture:
 
@@ -53,17 +55,7 @@ Not every module listed above is implemented yet.
 
 The Home module currently uses `sensor.home_power` as the canonical actual home-power source by default.
 
-It provides:
-
-- completed 15-minute home-energy observations;
-- persistent history;
-- separate `normal` and `away` profiles;
-- rolling 72-hour / 288-slot Home Forecast;
-- recency-weighted historical baseline modelling;
-- weekday/weekend fallback logic;
-- forecast confidence and model-health indicators;
-- forecast-versus-actual evaluation using Accuracy, MAE and Bias;
-- a Recorder-safe live forecast timeline.
+It provides completed 15-minute home-energy observations, persistent history, separate `normal` and `away` profiles, a rolling 72-hour / 288-slot forecast, recency-weighted historical baseline modelling, weekday/weekend fallback logic and forecast-versus-actual evaluation.
 
 Important Home entities include:
 
@@ -82,23 +74,11 @@ Important Home entities include:
 - `sensor.do_home_forecast_evaluation_samples`
 - `select.do_home_profile`
 
-Weather is not yet used as a correction factor in the Home Forecast model. New factors are intended to be evaluated before becoming part of the active model.
-
 ### Weather Forecast
 
 The Weather module fetches forecast data directly from Open-Meteo and normalizes it into the Dummy OS 15-minute forecast architecture.
 
-Current Weather behavior:
-
-- current weather observations from the selected Open-Meteo location;
-- 15-minute weather forecast data;
-- rolling 72-hour timeline;
-- exactly 288 normalized forecast points;
-- seven-day daily source summary;
-- hourly source refresh;
-- retry/backoff on temporary source failures;
-- source-status and freshness monitoring;
-- preservation of the last successful dataset when a later fetch temporarily fails.
+Current Weather behavior includes current observations, 15-minute forecast data, a rolling 72-hour timeline, seven-day daily source summary, hourly refresh with retry/backoff, source-status monitoring and preservation of the last successful dataset when a later fetch fails.
 
 Current configured source location:
 
@@ -124,7 +104,44 @@ Important Weather entities include:
 - `sensor.do_weather_last_update`
 - `sensor.do_weather_model`
 
-The Weather timeline includes temperature, humidity, dew point, apparent temperature, precipitation, rain, weather code, wind, solar-radiation components, sunshine duration and day/night information for each 15-minute slot.
+### Prices Shadow Layer
+
+The first Prices alpha is observation-only. It does not perform physical control and does not replace EMS execution logic.
+
+Electricity:
+
+- known market prices: `https://stroomvoorspeller.nl/data/prices.json`;
+- native known price source: `prices_15m[]` when `has_pt15m` is true;
+- hourly `prices[]` is retained only as a fallback and is expanded to four 15-minute slots;
+- forecast source: `https://stroomvoorspeller.nl/data/forecast.json`;
+- hourly forecast values are expanded to four 15-minute slots while retaining `source_resolution_minutes: 60`;
+- known prices always take precedence over forecast values for overlapping timestamps;
+- raw Stroomvoorspeller EPEX values are normalized from EUR/MWh to EUR/kWh;
+- Dummy OS calculates its own import/export all-in prices from configurable tariff components.
+
+Gas:
+
+- actual gas market price is read from the configured EnergyZero Home Assistant sensor;
+- default source entity: `sensor.energyzero_today_gas_current_hour_price`;
+- gas is treated as a daily price and can later be projected onto the common 15-minute time axis;
+- Dummy OS adds the configured gas supplier component and energy tax itself.
+
+Important Prices shadow entities:
+
+- `sensor.do_prices_status`
+- `sensor.do_prices_market_current`
+- `sensor.do_prices_import_current`
+- `sensor.do_prices_export_current`
+- `sensor.do_prices_timeline`
+- `sensor.do_prices_tariff_profile`
+- `sensor.do_prices_gas_market`
+- `sensor.do_prices_gas_all_in`
+
+Tariff values are configurable through the integration options. The engine does not contain operational supplier/tax price values. The current tariff profile contains separate fields for import, export, gas, VAT and fixed costs. Import and export are separate even when their current values are temporarily equal.
+
+Historical cost records are intended to store the tariff values that were actually used at the time. Later tariff changes must never silently reprice historical periods.
+
+During this alpha, `sensor.do_prices_timeline` is a validation/shadow entity with a large live `points` attribute. Exclude this entity from Recorder while the formal Recorder-safe timeline entity is being finalized.
 
 ## Installation
 
@@ -141,25 +158,17 @@ Because the project is still in alpha, users should review release notes before 
 
 ## Configuration
 
-The Home Forecast source defaults to:
+The Home Forecast source defaults to `sensor.home_power`.
 
-```text
-sensor.home_power
-```
+The active Home Forecast profile can be selected through `select.do_home_profile`.
 
-The active Home Forecast profile can be selected through:
-
-```text
-select.do_home_profile
-```
-
-Weather currently uses the fixed Open-Meteo source configuration documented above. Source configuration is expected to become more user-configurable as the integration matures.
+Prices tariff components are configured under the Dummy OS Data integration options. Price components should be entered on the basis indicated by the option name. The current alpha uses inclusive-VAT supplier/tax components and applies the configured VAT percentage to the raw EPEX market component.
 
 ## Data and Recorder behavior
 
 Dummy OS Data distinguishes between operational state and large timeline payloads.
 
-Compact states and useful metadata can be recorded normally by Home Assistant. Large timeline attributes, such as the full Home and Weather 288-point forecast arrays, are intentionally excluded from Recorder attributes while remaining available live to dashboards and future consumers.
+Compact states and useful metadata can be recorded normally by Home Assistant. Large timeline attributes should be excluded from Recorder. Home and Weather use formal Recorder-safe entity attributes; the first Prices shadow timeline should be manually excluded during alpha validation.
 
 Home Forecast historical observations and evaluation data are also persisted internally by the integration.
 
@@ -167,31 +176,13 @@ Home Forecast historical observations and evaluation data are also persisted int
 
 Forecast quality is treated as a first-class part of the architecture.
 
-The Home Forecast currently evaluates forecast snapshots against completed actual 15-minute observations. Available aggregate metrics include:
-
-- Accuracy
-- MAE
-- Bias
-- evaluation sample count
-- forecast coverage
-- confidence
-- model health
-
-The current accuracy metric is WAPE-like:
-
-```text
-max(0, 100 * (1 - sum(abs(forecast - actual)) / max(sum(actual), epsilon)))
-```
-
-Future forecast modules should follow the same principle: new model inputs are first observed and evaluated before being treated as proven improvements.
+The Home Forecast currently evaluates forecast snapshots against completed actual 15-minute observations. Future Prices evaluation will compare the forecast available at decision time with the later known market price, including MAE/bias and economic impact.
 
 ## Sources and attribution
 
-Dummy OS Data uses external projects, documentation and data providers. External sources should remain traceable in the repository and should not be introduced without documenting their purpose and applicable terms.
+Dummy OS Data uses external projects, documentation and data providers. External sources remain traceable in the repository and should not be introduced without documenting their purpose and applicable terms.
 
 ### Home Assistant
-
-Dummy OS Data is implemented as a custom integration for Home Assistant.
 
 - Project: https://www.home-assistant.io/
 - Developer documentation: https://developers.home-assistant.io/
@@ -201,47 +192,45 @@ Home Assistant is a separate project. Dummy OS Data is not affiliated with or en
 
 ### Open-Meteo
 
-Open-Meteo is the current weather-data provider for the Dummy OS Weather module.
-
 - Project: https://open-meteo.com/
 - Forecast API documentation: https://open-meteo.com/en/docs
 - Used for: current weather, 15-minute weather forecast, daily summaries, wind, precipitation, humidity and solar-radiation inputs.
 
-Dummy OS Data transforms and normalizes Open-Meteo source data into its own rolling 72-hour / 15-minute timeline. Open-Meteo data remains subject to the licensing, attribution and usage conditions published by Open-Meteo. Users and redistributors of this project should review the current Open-Meteo terms for their intended use.
+Dummy OS Data transforms and normalizes Open-Meteo source data into its own rolling 72-hour / 15-minute timeline. Open-Meteo data remains subject to the licensing, attribution and usage conditions published by Open-Meteo.
 
-### Other sources and references
+### Stroomvoorspeller.nl
 
-Additional providers or external implementation references may be added as the project grows. When a new external source becomes part of the implementation, this section and relevant module documentation should be updated with:
+- Project: https://stroomvoorspeller.nl/
+- Integration documentation: https://stroomvoorspeller.nl/integraties
+- Known electricity price feed: https://stroomvoorspeller.nl/data/prices.json
+- Forecast feed: https://stroomvoorspeller.nl/data/forecast.json
+- Used for: Dutch EPEX day-ahead market prices and multi-day electricity price forecasts.
+- Licence/attribution: Stroomvoorspeller data is used under **CC BY 4.0**; attribution to Stroomvoorspeller.nl must be retained.
 
-- source/provider name;
-- official project or documentation link;
-- purpose within Dummy OS Data;
-- applicable licensing or attribution requirements;
-- whether the source is required, optional or only used for benchmarking/reference.
+Dummy OS Data uses the market/forecast data as source material and calculates its own import/export tariff composition. The indicative consumer all-in calculations published by Stroomvoorspeller are not used as the authoritative Dummy OS all-in tariff.
+
+### EnergyZero
+
+- Project: https://www.energyzero.nl/
+- Used for: current daily gas market price through the Home Assistant EnergyZero integration.
+
+EnergyZero is used as an actual/reference source for gas. Supplier-specific tariff components remain separate inside Dummy OS Data.
 
 ## Roadmap
 
 Planned development areas include:
 
+- Prices validation dashboard and Google Sheets evaluation;
+- immutable price/tariff history and actual import/export cost records;
 - Solar Forecast;
-- degree-day and heat-demand calculations;
-- Weather evaluation and possible Home Forecast correction;
-- price normalization;
-- heat and boiler data models;
+- heat-demand and gas forecast models;
+- gas/TTF forecast evaluation;
 - broader forecast-quality diagnostics;
-- configurable source/provider settings;
 - stable interfaces for Dummy OS EMS.
-
-Roadmap items are intentions, not guarantees of a specific release date.
 
 ## Releases and change history
 
-This README describes the current project and should not be used as a per-version changelog.
-
-Version-specific changes are documented in:
-
-- GitHub Releases: https://github.com/bliek79/dummy-os-data/releases
-- `RELEASE_NOTES.md` in this repository
+Version-specific changes are documented in GitHub Releases and `RELEASE_NOTES.md`.
 
 Alpha and beta versions should be treated as pre-releases until a stable release is explicitly published.
 
@@ -249,6 +238,6 @@ Alpha and beta versions should be treated as pre-releases until a stable release
 
 Dummy OS Data is an independent open-source community project.
 
-It is not affiliated with, sponsored by or endorsed by Home Assistant, Nabu Casa, Open-Meteo, Anker Innovations or other third-party providers mentioned in the project documentation.
+It is not affiliated with, sponsored by or endorsed by Home Assistant, Nabu Casa, Open-Meteo, Stroomvoorspeller.nl, EnergyZero, Anker Innovations or other third-party providers mentioned in the project documentation.
 
 The software is provided for experimentation and Home Assistant automation/data purposes. Users remain responsible for reviewing configuration, source terms, data quality and any actions performed by systems that consume Dummy OS Data.
