@@ -11,11 +11,33 @@ from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
-from .const import CONF_HOME_POWER_ENTITY, DEFAULT_HOME_POWER_ENTITY, DOMAIN, NAME
+from .const import (
+    CONF_ELECTRICITY_EXPORT_SUPPLIER,
+    CONF_ELECTRICITY_EXPORT_TAX,
+    CONF_ELECTRICITY_FIXED_SUPPLY_PER_DAY,
+    CONF_ELECTRICITY_GRID_PER_DAY,
+    CONF_ELECTRICITY_IMPORT_SUPPLIER,
+    CONF_ELECTRICITY_IMPORT_TAX,
+    CONF_ELECTRICITY_TAX_CREDIT_PER_DAY,
+    CONF_GAS_FIXED_SUPPLY_PER_DAY,
+    CONF_GAS_GRID_PER_DAY,
+    CONF_GAS_MARKET_ENTITY,
+    CONF_GAS_SUPPLIER,
+    CONF_GAS_TAX,
+    CONF_HOME_POWER_ENTITY,
+    CONF_TARIFF_PROFILE_ID,
+    CONF_TARIFF_SUPPLIER,
+    CONF_TARIFF_VALID_FROM,
+    CONF_VAT_PERCENT,
+    DEFAULT_GAS_MARKET_ENTITY,
+    DEFAULT_HOME_POWER_ENTITY,
+    DOMAIN,
+    NAME,
+)
 
 
 class DummyOSDataConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Dummy OS Data."""
+    """Handle Dummy OS Data config flow."""
 
     VERSION = 1
 
@@ -33,17 +55,11 @@ class DummyOSDataConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             elif state.attributes.get("unit_of_measurement") not in {"W", "kW"}:
                 errors["base"] = "unsupported_unit"
             else:
-                return self.async_create_entry(
-                    title=NAME,
-                    data={CONF_HOME_POWER_ENTITY: entity_id},
-                )
+                return self.async_create_entry(title=NAME, data={CONF_HOME_POWER_ENTITY: entity_id})
 
         schema = vol.Schema(
             {
-                vol.Required(
-                    CONF_HOME_POWER_ENTITY,
-                    default=DEFAULT_HOME_POWER_ENTITY,
-                ): selector.EntitySelector(
+                vol.Required(CONF_HOME_POWER_ENTITY, default=DEFAULT_HOME_POWER_ENTITY): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor")
                 )
             }
@@ -60,20 +76,37 @@ class DummyOSDataConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class DummyOSDataOptionsFlow(config_entries.OptionsFlow):
     """Handle Dummy OS Data options."""
 
+    def _current(self, key: str, default: Any) -> Any:
+        return self.config_entry.options.get(key, self.config_entry.data.get(key, default))
+
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        """Manage options."""
+        """Manage source and tariff options."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        current = self.config_entry.options.get(
-            CONF_HOME_POWER_ENTITY,
-            self.config_entry.data.get(CONF_HOME_POWER_ENTITY, DEFAULT_HOME_POWER_ENTITY),
-        )
         schema = vol.Schema(
             {
-                vol.Required(CONF_HOME_POWER_ENTITY, default=current): selector.EntitySelector(
+                vol.Required(CONF_HOME_POWER_ENTITY, default=self._current(CONF_HOME_POWER_ENTITY, DEFAULT_HOME_POWER_ENTITY)): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor")
-                )
+                ),
+                vol.Required(CONF_TARIFF_PROFILE_ID, default=self._current(CONF_TARIFF_PROFILE_ID, "current")): str,
+                vol.Required(CONF_TARIFF_SUPPLIER, default=self._current(CONF_TARIFF_SUPPLIER, "ANWB Energie")): str,
+                vol.Optional(CONF_TARIFF_VALID_FROM, default=self._current(CONF_TARIFF_VALID_FROM, "2026-01-01")): str,
+                vol.Required(CONF_VAT_PERCENT, default=self._current(CONF_VAT_PERCENT, 21.0)): vol.Coerce(float),
+                vol.Required(CONF_ELECTRICITY_IMPORT_SUPPLIER, default=self._current(CONF_ELECTRICITY_IMPORT_SUPPLIER, 0.0)): vol.Coerce(float),
+                vol.Required(CONF_ELECTRICITY_IMPORT_TAX, default=self._current(CONF_ELECTRICITY_IMPORT_TAX, 0.0)): vol.Coerce(float),
+                vol.Required(CONF_ELECTRICITY_EXPORT_SUPPLIER, default=self._current(CONF_ELECTRICITY_EXPORT_SUPPLIER, 0.0)): vol.Coerce(float),
+                vol.Required(CONF_ELECTRICITY_EXPORT_TAX, default=self._current(CONF_ELECTRICITY_EXPORT_TAX, 0.0)): vol.Coerce(float),
+                vol.Required(CONF_ELECTRICITY_FIXED_SUPPLY_PER_DAY, default=self._current(CONF_ELECTRICITY_FIXED_SUPPLY_PER_DAY, 0.0)): vol.Coerce(float),
+                vol.Required(CONF_ELECTRICITY_GRID_PER_DAY, default=self._current(CONF_ELECTRICITY_GRID_PER_DAY, 0.0)): vol.Coerce(float),
+                vol.Required(CONF_ELECTRICITY_TAX_CREDIT_PER_DAY, default=self._current(CONF_ELECTRICITY_TAX_CREDIT_PER_DAY, 0.0)): vol.Coerce(float),
+                vol.Required(CONF_GAS_MARKET_ENTITY, default=self._current(CONF_GAS_MARKET_ENTITY, DEFAULT_GAS_MARKET_ENTITY)): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Required(CONF_GAS_SUPPLIER, default=self._current(CONF_GAS_SUPPLIER, 0.0)): vol.Coerce(float),
+                vol.Required(CONF_GAS_TAX, default=self._current(CONF_GAS_TAX, 0.0)): vol.Coerce(float),
+                vol.Required(CONF_GAS_FIXED_SUPPLY_PER_DAY, default=self._current(CONF_GAS_FIXED_SUPPLY_PER_DAY, 0.0)): vol.Coerce(float),
+                vol.Required(CONF_GAS_GRID_PER_DAY, default=self._current(CONF_GAS_GRID_PER_DAY, 0.0)): vol.Coerce(float),
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema)
