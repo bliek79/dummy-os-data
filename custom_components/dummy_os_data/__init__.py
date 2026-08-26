@@ -10,6 +10,7 @@ from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN, PLATFORMS
 from .coordinator import DummyOSHomeDataCoordinator
+from .degree_days import DummyOSDegreeDaysCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,6 +54,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry) 
     """Set up Dummy OS Data from a config entry."""
     coordinator = DummyOSHomeDataCoordinator(hass, entry)
     await coordinator.async_setup()
+
+    # Degree Days / Heat History is deliberately a shadow layer. It stores its
+    # own completed-day history and compares against the still-active legacy
+    # packages without changing or controlling those packages.
+    coordinator.degree_days = DummyOSDegreeDaysCoordinator(hass, coordinator.weather)
+    await coordinator.degree_days.async_setup()
+
     entry.runtime_data = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -95,5 +103,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry)
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
+        degree_days = getattr(entry.runtime_data, "degree_days", None)
+        if degree_days is not None:
+            await degree_days.async_shutdown()
         await entry.runtime_data.async_shutdown()
     return unload_ok
