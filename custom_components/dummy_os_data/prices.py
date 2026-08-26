@@ -1,9 +1,9 @@
 """Prices shadow layer for Dummy OS Data.
 
-This module deliberately separates market data from tariff composition.
-Known electricity prices and the electricity forecast are sourced from
+Market data and tariff composition are deliberately separated. Known
+15-minute electricity prices and the electricity forecast are sourced from
 Stroomvoorspeller. Gas actuals are read from the EnergyZero Home Assistant
-entity. All tariff components are configurable through the integration options.
+entity. Tariff components are configurable through the integration options.
 """
 
 from __future__ import annotations
@@ -151,9 +151,6 @@ class DummyOSPricesCoordinator:
         market = self.gas_market_price
         if market is None:
             return None
-        # EnergyZero's HA gas market sensor is already expressed in consumer
-        # EUR/m3 including VAT, while supplier/tax components are configured in
-        # the same inclusive basis.
         return round(market + self._num(CONF_GAS_SUPPLIER) + self._num(CONF_GAS_TAX), 5)
 
     async def async_setup(self) -> None:
@@ -201,10 +198,11 @@ class DummyOSPricesCoordinator:
             self.forecast_generated_at = forecast_payload.get("generated_at") or forecast_payload.get("generated")
             self.error = None
             self.status = "ok" if self.points else "empty"
-        except Exception as err:  # network/data errors must not break HA setup
+        except Exception as err:
             self.error = f"{type(err).__name__}: {err}"
             self.status = "error"
             _LOGGER.warning("Dummy OS Prices refresh failed: %s", self.error)
+        self._publish_states()
         self._notify()
 
     def _build_timeline(self, prices_payload: dict[str, Any], forecast_payload: dict[str, Any]) -> list[PricePoint]:
@@ -220,9 +218,8 @@ class DummyOSPricesCoordinator:
             market = self._eur_mwh_to_kwh(item.get("price"))
             if start is None or market is None:
                 continue
-            point = self._compose_point(start, market, "known", source_resolution)
             if source_resolution == 15:
-                known[start] = point
+                known[start] = self._compose_point(start, market, "known_pt15m", 15)
             else:
                 for quarter in range(4):
                     q_start = start + timedelta(minutes=quarter * QUARTER_MINUTES)
@@ -271,6 +268,68 @@ class DummyOSPricesCoordinator:
             export_all_in=round(export_all_in, 6),
             kind=kind,
             source_resolution_minutes=source_resolution,
+        )
+
+    def _publish_states(self) -> None:
+        point = self.current_point
+        common = self.attributes
+        point_attrs = point.as_dict() if point else {}
+        self.hass.states.async_set("sensor.do_prices_status", self.status, common)
+        self.hass.states.async_set(
+            "sensor.do_prices_market_current",
+            point.market_incl_vat if point else None,
+            {**common, **point_attrs, "unit_of_measurement": "EUR/kWh", "price_basis": "market_incl_vat"},
+        )
+        self.hass.states.async_set(
+            "sensor.do_prices_import_current",
+            point.import_all_in if point else None,
+            {**common, **point_attrs, "unit_of_measurement": "EUR/kWh", "price_basis": "marginal_import_all_in"},
+        )
+        self.hass.states.async_set(
+            "sensor.do_prices_export_current",
+            point.export_all_in if point else None,
+            {**common, **point_attrs, "unit_of_measurement": "EUR/kWh", "price_basis": "marginal_export_all_in"},
+        )
+        self.hass.states.async_set(
+            "sensor.do_prices_timeline",
+            len(self.points),
+            {
+                **common,
+                "point_format": "dict",
+                "recorder_recommendation": "exclude this timeline sensor from Recorder",
+                "points": [p.as_dict() for p in self.points],
+            },
+        )
+        tariff = self.tariff_snapshot
+        self.hass.states.async_set(
+            "sensor.do_prices_tariff_profile",
+            tariff.get("profile_id") or "unconfigured",
+            {**tariff, "immutable_history_rule": True, "future_profile_changes_do_not_reprice_history": True},
+        )
+        gas_market = self.gas_market_price
+        self.hass.states.async_set(
+            "sensor.do_prices_gas_market",
+            gas_market,
+            {
+                "unit_of_measurement": "EUR/m3",
+                "source": "EnergyZero",
+                "source_entity": self.gas_market_entity,
+                "resolution": "daily",
+                "internal_resolution_minutes": 15,
+            },
+        )
+        self.hass.states.async_set(
+            "sensor.do_prices_gas_all_in",
+            self.gas_all_in_price,
+            {
+                "unit_of_measurement": "EUR/m3",
+                "source": "EnergyZero + Dummy OS tariff profile",
+                "market_price_incl_vat": gas_market,
+                "supplier_component_incl_vat": self._num(CONF_GAS_SUPPLIER),
+                "energy_tax_incl_vat": self._num(CONF_GAS_TAX),
+                "tariff_profile_id": tariff.get("profile_id"),
+                "tariff_valid_from": tariff.get("valid_from"),
+            },
         )
 
     @staticmethod
@@ -328,7 +387,7 @@ class DummyOSPricesCoordinator:
             "forecast_slots": self.forecast_count,
             "timeline_slots": len(self.points),
             "resolution_minutes": QUARTER_MINUTES,
-            "actual_source": "stroomvoorspeller_prices_15m",
+            "actual_source": "stroomvoorspeller_prices_15m" if self.has_pt15m else "stroomvoorspeller_prices_hourly_fallback",
             "forecast_source": "stroomvoorspeller_forecast",
             "attribution": SOURCE_ATTRIBUTION,
             "error": self.error,
