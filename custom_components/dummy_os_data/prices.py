@@ -7,9 +7,9 @@ from datetime import datetime, timedelta
 import logging
 from typing import Any
 
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -161,6 +161,13 @@ class DummyOSPricesCoordinator:
     async def async_setup(self) -> None:
         await self.async_refresh()
         self._unsubs.append(async_track_time_interval(self.hass, self._scheduled_refresh, REFRESH_INTERVAL))
+        self._unsubs.append(
+            async_track_state_change_event(
+                self.hass,
+                [self.gas_market_entity, GAS_VARIABLE_ADDON_ENTITY],
+                self._gas_source_changed,
+            )
+        )
 
     async def async_shutdown(self) -> None:
         for unsub in self._unsubs:
@@ -186,6 +193,12 @@ class DummyOSPricesCoordinator:
     def _scheduled_refresh(self, _now: datetime) -> None:
         self.hass.async_create_task(self.async_refresh())
 
+    @callback
+    def _gas_source_changed(self, _event: Event) -> None:
+        """Republish gas states as soon as EnergyZero or the gas add-on changes."""
+        self._publish_states()
+        self._notify()
+
     async def async_refresh(self) -> None:
         session = async_get_clientsession(self.hass)
         try:
@@ -210,18 +223,11 @@ class DummyOSPricesCoordinator:
         self._notify()
 
     def _build_timeline(self, prices_payload: dict[str, Any], forecast_payload: dict[str, Any]) -> list[PricePoint]:
-        """Build a rolling timeline with known prices always preferred.
-
-        PT15M is primary. The full hourly day-ahead list is also normalized to
-        quarter slots as a gap fallback. This prevents a missing/stale PT15M
-        slice from making a future forecast look like the current price.
-        """
+        """Build a rolling timeline with known prices always preferred."""
         pt15_raw = prices_payload.get("prices_15m") or []
         self.has_pt15m = prices_payload.get("has_pt15m") is True and bool(pt15_raw)
 
         known: dict[datetime, PricePoint] = {}
-
-        # Hourly known prices provide robust coverage for today/tomorrow.
         for item in prices_payload.get("prices") or []:
             start = self._parse_time(item.get("time") or item.get("timestamp") or item.get("start"))
             market = self._eur_mwh_to_kwh(item.get("price"))
@@ -231,7 +237,6 @@ class DummyOSPricesCoordinator:
                 q_start = start + timedelta(minutes=quarter * QUARTER_MINUTES)
                 known[q_start] = self._compose_point(q_start, market, "known_hourly_fallback", 60)
 
-        # PT15M overrides matching hourly slots.
         pt15_count = 0
         if self.has_pt15m:
             for item in pt15_raw:
@@ -268,13 +273,7 @@ class DummyOSPricesCoordinator:
         now_local = dt_util.as_local(dt_util.utcnow())
         current_quarter = now_local.replace(minute=(now_local.minute // 15) * 15, second=0, microsecond=0)
         end = current_quarter + timedelta(minutes=FORECAST_SLOTS * QUARTER_MINUTES)
-
-        timeline = [
-            merged[t]
-            for t in sorted(merged)
-            if current_quarter <= dt_util.as_local(t) < end
-        ][:FORECAST_SLOTS]
-
+        timeline = [merged[t] for t in sorted(merged) if current_quarter <= dt_util.as_local(t) < end][:FORECAST_SLOTS]
         point = self._find_current_point(timeline)
         self.current_source = point.kind if point is not None else "missing"
         return timeline
