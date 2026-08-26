@@ -92,6 +92,8 @@ class DummyOSPricesCoordinator:
         self.error: str | None = None
         self.has_pt15m = False
         self.pt15m_count = 0
+        self.pt15m_first_time: datetime | None = None
+        self.pt15m_last_time: datetime | None = None
         self.known_count = 0
         self.forecast_count = 0
         self.current_source = "missing"
@@ -238,6 +240,7 @@ class DummyOSPricesCoordinator:
                 known[q_start] = self._compose_point(q_start, market, "known_hourly_fallback", 60)
 
         pt15_count = 0
+        pt15_times: list[datetime] = []
         if self.has_pt15m:
             for item in pt15_raw:
                 start = self._parse_time(item.get("time") or item.get("timestamp") or item.get("start"))
@@ -245,8 +248,11 @@ class DummyOSPricesCoordinator:
                 if start is None or market is None:
                     continue
                 known[start] = self._compose_point(start, market, "known_pt15m", 15)
+                pt15_times.append(start)
                 pt15_count += 1
         self.pt15m_count = pt15_count
+        self.pt15m_first_time = min(pt15_times) if pt15_times else None
+        self.pt15m_last_time = max(pt15_times) if pt15_times else None
         self.known_count = len(known)
 
         forecast_generated = forecast_payload.get("generated_at") or forecast_payload.get("generated")
@@ -402,6 +408,8 @@ class DummyOSPricesCoordinator:
             "forecast_generated_at": self.forecast_generated_at,
             "has_pt15m": self.has_pt15m,
             "pt15m_slots": self.pt15m_count,
+            "pt15m_first_time": self.pt15m_first_time.isoformat() if self.pt15m_first_time else None,
+            "pt15m_last_time": self.pt15m_last_time.isoformat() if self.pt15m_last_time else None,
             "known_slots": self.known_count,
             "forecast_slots": self.forecast_count,
             "timeline_slots": len(self.points),
