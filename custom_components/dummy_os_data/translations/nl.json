@@ -21,8 +21,25 @@
     "step": {
       "init": {
         "title": "Dummy OS Data-opties",
+        "description": "Configureer bronnen en het actieve tariefprofiel. Leveranciers- en belastingcomponenten worden inclusief btw ingevoerd; het btw-percentage wordt toegepast op de kale EPEX-marktprijs.",
         "data": {
-          "home_power_entity": "Bron woningvermogen"
+          "home_power_entity": "Bron woningvermogen",
+          "tariff_profile_id": "Tariefprofiel-ID",
+          "tariff_supplier": "Energieleverancier",
+          "tariff_valid_from": "Tarief geldig vanaf (JJJJ-MM-DD)",
+          "vat_percent": "Btw-percentage",
+          "electricity_import_supplier_incl_vat": "Stroom import leverancierscomponent incl. btw (EUR/kWh)",
+          "electricity_import_tax_incl_vat": "Stroom import energiebelasting incl. btw (EUR/kWh)",
+          "electricity_export_supplier_incl_vat": "Stroom export leverancierscomponent incl. btw (EUR/kWh)",
+          "electricity_export_tax_incl_vat": "Stroom export belastingcomponent incl. btw (EUR/kWh)",
+          "electricity_fixed_supply_per_day": "Stroom vaste leveringskosten (EUR/dag)",
+          "electricity_grid_per_day": "Stroom netbeheerkosten (EUR/dag)",
+          "electricity_tax_credit_per_day": "Vermindering energiebelasting stroom (EUR/dag)",
+          "gas_market_entity": "EnergyZero gasmarktprijs-sensor",
+          "gas_supplier_incl_vat": "Gas leverancierscomponent incl. btw (EUR/m3)",
+          "gas_tax_incl_vat": "Gas energiebelasting incl. btw (EUR/m3)",
+          "gas_fixed_supply_per_day": "Gas vaste leveringskosten (EUR/dag)",
+          "gas_grid_per_day": "Gas netbeheerkosten (EUR/dag)"
         }
       }
     }

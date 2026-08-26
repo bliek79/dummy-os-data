@@ -11,6 +11,7 @@ from homeassistant.helpers import entity_registry as er
 from .const import DOMAIN, PLATFORMS
 from .coordinator import DummyOSHomeDataCoordinator
 from .degree_days import DummyOSDegreeDaysCoordinator
+from .prices import DummyOSPricesCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,6 +47,14 @@ _ENTITY_ID_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("sensor", "do_weather_source_freshness", "sensor.do_weather_source_freshness"),
     ("sensor", "do_weather_last_update", "sensor.do_weather_last_update"),
     ("sensor", "do_weather_model", "sensor.do_weather_model"),
+    ("sensor", "do_prices_status", "sensor.do_prices_status"),
+    ("sensor", "do_prices_market_current", "sensor.do_prices_market_current"),
+    ("sensor", "do_prices_import_current", "sensor.do_prices_import_current"),
+    ("sensor", "do_prices_export_current", "sensor.do_prices_export_current"),
+    ("sensor", "do_prices_timeline", "sensor.do_prices_timeline"),
+    ("sensor", "do_prices_tariff_profile", "sensor.do_prices_tariff_profile"),
+    ("sensor", "do_prices_gas_market", "sensor.do_prices_gas_market"),
+    ("sensor", "do_prices_gas_all_in", "sensor.do_prices_gas_all_in"),
     ("select", "do_home_profile", "select.do_home_profile"),
 )
 
@@ -55,11 +64,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry) 
     coordinator = DummyOSHomeDataCoordinator(hass, entry)
     await coordinator.async_setup()
 
-    # Degree Days / Heat History is deliberately a shadow layer. It stores its
-    # own completed-day history and compares against the still-active legacy
-    # packages without changing or controlling those packages.
     coordinator.degree_days = DummyOSDegreeDaysCoordinator(hass, coordinator.weather)
     await coordinator.degree_days.async_setup()
+
+    coordinator.prices = DummyOSPricesCoordinator(hass, entry)
+    await coordinator.prices.async_setup()
 
     entry.runtime_data = coordinator
 
@@ -103,6 +112,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry)
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
+        prices = getattr(entry.runtime_data, "prices", None)
+        if prices is not None:
+            await prices.async_shutdown()
         degree_days = getattr(entry.runtime_data, "degree_days", None)
         if degree_days is not None:
             await degree_days.async_shutdown()
