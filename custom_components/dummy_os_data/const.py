@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 DOMAIN = "dummy_os_data"
-NAME = "Dummy OS Data"
-VERSION = "0.1.0-alpha.8.4"
+NAME = "Dummy OS"
+VERSION = "0.1.0-alpha.8.5"
 
 CONF_HOME_POWER_ENTITY = "home_power_entity"
 DEFAULT_HOME_POWER_ENTITY = "sensor.home_power"
