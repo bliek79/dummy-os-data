@@ -1,0 +1,45 @@
+alias: Sheets export - Heat & Degree Days Evaluation
+description: Exporteert dagelijks de afgesloten Dummy OS Degree Days / Heat snapshot.
+triggers:
+  - trigger: time
+    at: "00:00:20"
+conditions:
+  - condition: template
+    value_template: >-
+      {{ states('sensor.do_heat_degree_days_last_day') not in ['unknown','unavailable','none',''] }}
+actions:
+  - action: google_sheets.append_sheet
+    data:
+      config_entry: REPLACE_WITH_GOOGLE_SHEETS_CONFIG_ENTRY_ID
+      worksheet: Heat & Degree Days Evaluation
+      data:
+        Datum: "{{ states('sensor.do_heat_degree_days_last_day') }}"
+        Evaluatie geldig: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'valid') }}"
+        Dummy OS gemiddelde temperatuur: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'average_temperature_c') }}"
+        Package temperatuur referentie: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'reference_temperature_c') }}"
+        Dummy OS graaddagen: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'degree_days') }}"
+        Package graaddagen: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'reference_degree_days') }}"
+        Verschil graaddagen: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'degree_days_difference') }}"
+        Dummy OS gewogen graaddagen: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'weighted_degree_days') }}"
+        Package gewogen graaddagen: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'reference_weighted_degree_days') }}"
+        Verschil gewogen graaddagen: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'weighted_degree_days_difference') }}"
+        Seizoensfactor: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'season_factor') }}"
+        Dekking procent: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'coverage_percent') }}"
+        Meeturen: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'sample_hours') }}"
+        Gas totaal m3: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'gas_total_m3') }}"
+        Gas per DD m3: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'gas_per_degree_day_m3') }}"
+        Gas per WDD m3: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'gas_per_weighted_degree_day_m3') }}"
+        Tapwater m3: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'tapwater_m3') }}"
+        Tapwater bron: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'tapwater_source') }}"
+        Tapwater kwaliteit: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'tapwater_quality') }}"
+        Ruimteverwarming equivalent m3: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'space_heating_equivalent_m3') }}"
+        Zonneboiler thermisch kWh: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'solar_boiler_thermal_kwh') }}"
+        Zonneboiler gasbesparing m3: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'solar_boiler_gas_savings_m3') }}"
+        Boilerelement elektrisch kWh: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'boiler_element_electric_kwh') }}"
+        Boilerelement gas-equivalent m3: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'boiler_element_gas_equivalent_m3') }}"
+        Totale warmte kWh: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'total_heat_energy_kwh') }}"
+        Totale warmte equivalent m3: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'total_heat_equivalent_m3') }}"
+        Boiler energie-inhoud kWh: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'boiler_energy_content_kwh') }}"
+        Bron: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'source') }}"
+        Basis temperatuur C: "{{ state_attr('sensor.do_heat_degree_days_last_day', 'base_temperature_c') }}"
+mode: single
