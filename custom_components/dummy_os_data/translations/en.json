@@ -21,8 +21,25 @@
     "step": {
       "init": {
         "title": "Dummy OS Data options",
+        "description": "Configure sources and the active tariff profile. Supplier and tax components are entered including VAT; the VAT percentage is applied to the raw EPEX market component.",
         "data": {
-          "home_power_entity": "Home power source"
+          "home_power_entity": "Home power source",
+          "tariff_profile_id": "Tariff profile ID",
+          "tariff_supplier": "Energy supplier",
+          "tariff_valid_from": "Tariff valid from (YYYY-MM-DD)",
+          "vat_percent": "VAT percentage",
+          "electricity_import_supplier_incl_vat": "Electricity import supplier component incl. VAT (EUR/kWh)",
+          "electricity_import_tax_incl_vat": "Electricity import energy tax incl. VAT (EUR/kWh)",
+          "electricity_export_supplier_incl_vat": "Electricity export supplier component incl. VAT (EUR/kWh)",
+          "electricity_export_tax_incl_vat": "Electricity export tax component incl. VAT (EUR/kWh)",
+          "electricity_fixed_supply_per_day": "Electricity fixed supply cost (EUR/day)",
+          "electricity_grid_per_day": "Electricity grid cost (EUR/day)",
+          "electricity_tax_credit_per_day": "Electricity tax credit (EUR/day)",
+          "gas_market_entity": "EnergyZero gas market price sensor",
+          "gas_supplier_incl_vat": "Gas supplier component incl. VAT (EUR/m3)",
+          "gas_tax_incl_vat": "Gas energy tax incl. VAT (EUR/m3)",
+          "gas_fixed_supply_per_day": "Gas fixed supply cost (EUR/day)",
+          "gas_grid_per_day": "Gas grid cost (EUR/day)"
         }
       }
     }
