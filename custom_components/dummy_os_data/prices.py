@@ -37,6 +37,7 @@ from .const import (
     CONF_VAT_PERCENT,
     DEFAULT_GAS_MARKET_ENTITY,
     FORECAST_SLOTS,
+    GAS_VARIABLE_ADDON_ENTITY,
     QUARTER_MINUTES,
 )
 
@@ -106,6 +107,21 @@ class DummyOSPricesCoordinator:
         return dict(self.entry.options)
 
     @property
+    def gas_variable_addon(self) -> float:
+        """Return active gas variable add-on, following the existing HA helper.
+
+        This preserves the already configured tariff-change automation. If the
+        helper is unavailable, fall back to the split configured components.
+        """
+        state = self.hass.states.get(GAS_VARIABLE_ADDON_ENTITY)
+        if state is not None and state.state not in {"unknown", "unavailable", "none", "None", ""}:
+            try:
+                return float(state.state)
+            except ValueError:
+                pass
+        return self._num(CONF_GAS_SUPPLIER) + self._num(CONF_GAS_TAX)
+
+    @property
     def tariff_snapshot(self) -> dict[str, Any]:
         opts = self.options
         return {
@@ -122,6 +138,8 @@ class DummyOSPricesCoordinator:
             "electricity_tax_credit_per_day": self._num(CONF_ELECTRICITY_TAX_CREDIT_PER_DAY),
             "gas_supplier_incl_vat": self._num(CONF_GAS_SUPPLIER),
             "gas_tax_incl_vat": self._num(CONF_GAS_TAX),
+            "gas_variable_addon_used": round(self.gas_variable_addon, 5),
+            "gas_variable_addon_source": GAS_VARIABLE_ADDON_ENTITY,
             "gas_fixed_supply_per_day": self._num(CONF_GAS_FIXED_SUPPLY_PER_DAY),
             "gas_grid_per_day": self._num(CONF_GAS_GRID_PER_DAY),
         }
@@ -151,7 +169,7 @@ class DummyOSPricesCoordinator:
         market = self.gas_market_price
         if market is None:
             return None
-        return round(market + self._num(CONF_GAS_SUPPLIER) + self._num(CONF_GAS_TAX), 5)
+        return round(market + self.gas_variable_addon, 5)
 
     async def async_setup(self) -> None:
         await self.async_refresh()
@@ -325,8 +343,10 @@ class DummyOSPricesCoordinator:
                 "unit_of_measurement": "EUR/m3",
                 "source": "EnergyZero + Dummy OS tariff profile",
                 "market_price_incl_vat": gas_market,
-                "supplier_component_incl_vat": self._num(CONF_GAS_SUPPLIER),
-                "energy_tax_incl_vat": self._num(CONF_GAS_TAX),
+                "variable_addon_incl_vat": round(self.gas_variable_addon, 5),
+                "variable_addon_source": GAS_VARIABLE_ADDON_ENTITY,
+                "configured_supplier_component_incl_vat": self._num(CONF_GAS_SUPPLIER),
+                "configured_energy_tax_incl_vat": self._num(CONF_GAS_TAX),
                 "tariff_profile_id": tariff.get("profile_id"),
                 "tariff_valid_from": tariff.get("valid_from"),
             },

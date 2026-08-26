@@ -27,6 +27,7 @@ CONF_GAS_FIXED_SUPPLY_PER_DAY = "gas_fixed_supply_per_day"
 CONF_GAS_GRID_PER_DAY = "gas_grid_per_day"
 
 DEFAULT_GAS_MARKET_ENTITY = "sensor.energyzero_today_gas_current_hour_price"
+GAS_VARIABLE_ADDON_ENTITY = "input_number.gas_markup_per_m3"
 
 PLATFORMS = ["sensor", "select"]
 
