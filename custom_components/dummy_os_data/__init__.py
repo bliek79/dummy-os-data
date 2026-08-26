@@ -50,19 +50,49 @@ _ENTITY_ID_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
 
 
 def _apply_entity_name_policy() -> None:
-    """Keep visible entity names exactly as defined by Dummy OS Data.
+    """Apply HA-native entity naming without duplicated Dummy OS prefixes.
 
-    Home Assistant otherwise prefixes the device name ("Dummy OS Data") to
-    entity names that already start with "Dummy OS", resulting in duplicate
-    friendly names such as "Dummy OS Data Dummy OS Weather Temperature".
-    Entity IDs and unique IDs are deliberately unaffected.
+    The integration remains named "Dummy OS Data", while its single device is
+    presented as "Dummy OS". Entity names are relative to that device and use
+    ``has_entity_name=True`` as required by current Home Assistant naming
+    conventions. Entity IDs and unique IDs are deliberately unaffected.
     """
+    from . import select as select_platform
+    from . import sensor as sensor_platform
     from .select import DummyOSHomeProfileSelect
-    from .sensor import DummyOSBaseSensor, DummyOSWeatherBaseSensor
+    from .sensor import DummyOSBaseSensor, DummyOSWeatherBaseSensor, DummyOSWeatherCurrentSensor
 
-    DummyOSBaseSensor._attr_has_entity_name = False
-    DummyOSWeatherBaseSensor._attr_has_entity_name = False
-    DummyOSHomeProfileSelect._attr_has_entity_name = False
+    # Device name used by DeviceInfo in the platform modules. The integration
+    # itself remains "Dummy OS Data" through manifest.json.
+    sensor_platform.NAME = "Dummy OS"
+    select_platform.NAME = "Dummy OS"
+
+    def _make_relative(entity_class: type) -> None:
+        name = getattr(entity_class, "_attr_name", None)
+        if isinstance(name, str) and name.startswith("Dummy OS "):
+            entity_class._attr_name = name.removeprefix("Dummy OS ")
+        entity_class._attr_has_entity_name = True
+
+    for entity_class in DummyOSBaseSensor.__subclasses__():
+        _make_relative(entity_class)
+    for entity_class in DummyOSWeatherBaseSensor.__subclasses__():
+        _make_relative(entity_class)
+    _make_relative(DummyOSHomeProfileSelect)
+
+    # Weather current sensors receive their name per instance in __init__, so
+    # normalize that generated name there as well. Guard against double wrapping
+    # when a config entry is reloaded.
+    if not getattr(DummyOSWeatherCurrentSensor, "_dummy_os_name_policy_wrapped", False):
+        original_init = DummyOSWeatherCurrentSensor.__init__
+
+        def _weather_current_init(self, *args, **kwargs) -> None:
+            original_init(self, *args, **kwargs)
+            if isinstance(self._attr_name, str) and self._attr_name.startswith("Dummy OS "):
+                self._attr_name = self._attr_name.removeprefix("Dummy OS ")
+            self._attr_has_entity_name = True
+
+        DummyOSWeatherCurrentSensor.__init__ = _weather_current_init
+        DummyOSWeatherCurrentSensor._dummy_os_name_policy_wrapped = True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry) -> bool:
