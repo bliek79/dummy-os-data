@@ -1,40 +1,66 @@
 # GitHub Release
 
-**Tag:** `0.1.0-alpha.6`  
-**Release title:** `Dummy OS Data 0.1.0-alpha.6 - Home Forecast Dashboard Interface`
+**Tag:** `0.1.0-alpha.10.0`  
+**Release title:** `Dummy OS Data 0.1.0-alpha.10.0 - Prices Shadow Layer`
 
-## Dummy OS Data 0.1.0-alpha.6
+## Dummy OS Data 0.1.0-alpha.10.0
 
-Deze release maakt de Home Forecast geschikt voor een volwaardig dashboard zonder de Recorder opnieuw met een te groot 288-slot attribuut te belasten.
+Deze release introduceert de eerste native Prices-shadowlaag voor Dummy OS Data. De module is uitsluitend observerend en berekent prijzen; er is nog geen EMS-uitvoering of fysieke sturing gekoppeld.
 
-### New
-- Nieuwe `sensor.do_home_forecast_timeline` voor dashboard- en grafiekgebruik.
-- De timeline levert de volledige actieve 72-uurs / 288-slot forecast als compacte `points`-reeks in formaat `[unix_ms, kwh]`.
-- Het `points`-attribuut is expliciet uitgesloten van Recorder-opslag via Home Assistant `unrecorded_attributes`.
-- `sensor.do_home_forecast` verwijst met `timeline_entity` naar de nieuwe timeline-entiteit.
-- `sensor.do_home_forecast_model` rapporteert `dashboard_timeline_active: true`.
+### Nieuw
+- Nieuwe native Prices-coordinator in `prices.py`.
+- Bekende stroomprijzen uit Stroomvoorspeller `prices.json` met voorkeur voor echte `prices_15m[]` PT15M-data.
+- Automatische fallback naar uurprijzen als PT15M tijdelijk niet beschikbaar is; uurwaarden blijven herkenbaar als `known_hourly_fallback`.
+- Stroomforecast uit Stroomvoorspeller `forecast.json`.
+- Uurforecast wordt op de interne 15-minuten tijdas geplaatst, maar blijft expliciet gemarkeerd met `source_resolution_minutes: 60`.
+- Bekende marktprijzen hebben altijd voorrang boven forecastwaarden op overlappende timestamps.
+- Marktprijsnormalisatie van EUR/MWh naar EUR/kWh.
+- Eigen import- en exportprijsberekening op basis van configureerbare tariefcomponenten.
+- Import en export zijn architectonisch volledig gescheiden zodat de 2027-situatie zonder herbouw ondersteund kan worden.
+- EnergyZero-gassensor als actuele gasmarktbron.
+- Eigen all-in gasprijsberekening bovenop de EnergyZero-marktprijs.
+- Nieuw configureerbaar tariefprofiel met profiel-ID, leverancier en `valid_from`.
+- Nieuwe shadow-entiteiten:
+  - `sensor.do_prices_status`
+  - `sensor.do_prices_market_current`
+  - `sensor.do_prices_import_current`
+  - `sensor.do_prices_export_current`
+  - `sensor.do_prices_timeline`
+  - `sensor.do_prices_tariff_profile`
+  - `sensor.do_prices_gas_market`
+  - `sensor.do_prices_gas_all_in`
 
-### Changed
-- Integratieversie wordt `0.1.0-alpha.6`.
-- De oude aanduiding `timeline_storage: internal_only` vervalt omdat de tijdlijn nu live beschikbaar is via een aparte Recorder-veilige entity.
-- De forecastberekening zelf blijft modelversie `0.4`; alpha.6 verandert de interface, niet de forecastwiskunde.
+### Gewijzigd
+- Integratieversie naar `0.1.0-alpha.10.0`.
+- Options Flow uitgebreid met afzonderlijke stroom-import-, stroom-export- en gastariefcomponenten.
+- Vaste leveringskosten, netbeheerkosten en vermindering energiebelasting worden apart geconfigureerd en niet in de marginale kwartierprijs verstopt.
+- README bevat nu expliciete bronvermelding voor Stroomvoorspeller.nl en CC BY 4.0.
 
-### Unchanged
-- Native resolutie blijft 15 minuten.
-- Forecast-horizon blijft 72 uur / 288 slots.
-- Recency weighting met 28 dagen half-life blijft actief.
-- Weekday/weekend day-type fallback blijft actief.
-- `normal` en `away` blijven strikt gescheiden.
-- Accuracy, MAE, Bias, Evaluation Samples, Confidence en Model Health blijven behouden.
-- Bestaande historie en evaluatiedata blijven behouden.
-- Geen Weather/Solar-koppeling en geen EMS-uitvoering of fysieke sturing.
+### Ontwerpregels
+- De operationele tariefwaarden zijn niet hardcoded in de prijsengine.
+- Ruwe EPEX-marktprijs, leverancierscomponent, belasting en all-in resultaat blijven afzonderlijk zichtbaar.
+- Historische kosten moeten later de daadwerkelijk gebruikte tariefsnapshot bewaren; toekomstige tariefwijzigingen mogen bestaande historie nooit herprijzen.
+- Import en export worden vanaf de eerste implementatie als afzonderlijke prijsstromen behandeld, ook wanneer de actuele tariefwaarden voorlopig gelijk zijn.
+- Stroomforecast en bekende prijs houden hun oorspronkelijke bronresolutie zichtbaar om schijnbare kwartiernauwkeurigheid te voorkomen.
 
-### Validation
-- Na upgrade moeten 15 entiteiten aanwezig zijn.
-- `sensor.do_home_forecast_timeline` moet bestaan en state `288` tonen wanneer alle forecastslots gevuld zijn.
-- `sensor.do_home_forecast_timeline` moet een `points` attribuut bevatten met maximaal 288 `[unix_ms, kwh]` punten.
-- `point_format` moet `[unix_ms, kwh]` zijn en `recorder_points` moet `excluded` tonen.
-- `sensor.do_home_forecast_model` moet `dashboard_timeline_active: true` tonen.
-- Bestaande History Days, Evaluation Samples, Accuracy, MAE, Bias, Confidence en Model Health moeten behouden blijven.
-- Recorder mag geen oversized-attribute waarschuwing voor de Home Forecast of timeline geven.
-- Er mogen geen nieuwe `dummy_os_data` setup- of runtimefouten ontstaan.
+### Ongewijzigd
+- Home Forecast blijft modelversie 0.4.
+- Weather blijft de bestaande Open-Meteo 15-minuten / 72-uurs bronlaag gebruiken.
+- Degree Days / Heat History blijft als aparte shadowlaag actief.
+- Bestaande Home-, Weather- en Degree Days-entiteiten worden niet hernoemd.
+- Geen batterij-, boiler-, warmtepomp- of andere fysieke sturing toegevoegd.
+
+### Validatie
+Na installatie/herladen controleren:
+
+1. `sensor.do_prices_status` wordt `ok`.
+2. Attribuut `has_pt15m` is `true` als Stroomvoorspeller echte kwartierdata levert.
+3. `sensor.do_prices_timeline` bevat maximaal 288 punten en `resolution_minutes: 15`.
+4. Bekende punten hebben `kind: known_pt15m`; forecastpunten `kind: forecast_hour` en `source_resolution_minutes: 60`.
+5. `sensor.do_prices_market_current` toont de actuele marktprijs incl. btw in EUR/kWh.
+6. `sensor.do_prices_import_current` en `sensor.do_prices_export_current` reageren afzonderlijk op de ingestelde tariefcomponenten.
+7. `sensor.do_prices_tariff_profile` toont het actieve profiel en `valid_from`.
+8. `sensor.do_prices_gas_market` volgt de ingestelde EnergyZero-gassensor.
+9. `sensor.do_prices_gas_all_in` is marktprijs + ingestelde gasleverancierscomponent + energiebelasting.
+10. Geen nieuwe `dummy_os_data` setup- of runtimefouten in het Home Assistant-logboek.
+11. `sensor.do_prices_timeline` tijdens deze alpha uit Recorder houden vanwege het grote live `points`-attribuut.
