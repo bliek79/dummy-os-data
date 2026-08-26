@@ -4,7 +4,7 @@ from __future__ import annotations
 
 DOMAIN = "dummy_os_data"
 NAME = "Dummy OS"
-VERSION = "0.1.0-alpha.8.5"
+VERSION = "0.1.0-alpha.9.0"
 
 CONF_HOME_POWER_ENTITY = "home_power_entity"
 DEFAULT_HOME_POWER_ENTITY = "sensor.home_power"
