@@ -1,10 +1,4 @@
-"""Prices shadow layer for Dummy OS Data.
-
-Market data and tariff composition are deliberately separated. Known
-15-minute electricity prices and the electricity forecast are sourced from
-Stroomvoorspeller. Gas actuals are read from the EnergyZero Home Assistant
-entity. Tariff components are configurable through the integration options.
-"""
+"""Prices shadow layer for Dummy OS Data."""
 
 from __future__ import annotations
 
@@ -52,8 +46,6 @@ SOURCE_STALE_AFTER = timedelta(hours=28)
 
 @dataclass(slots=True)
 class PricePoint:
-    """One normalized 15-minute price point."""
-
     start: datetime
     market_ex_vat: float | None
     market_incl_vat: float | None
@@ -85,7 +77,7 @@ class PricePoint:
 
 
 class DummyOSPricesCoordinator:
-    """Fetch and normalize market prices without controlling anything."""
+    """Fetch and normalize prices without controlling anything."""
 
     def __init__(self, hass: HomeAssistant, entry) -> None:
         self.hass = hass
@@ -99,20 +91,23 @@ class DummyOSPricesCoordinator:
         self.status = "not_loaded"
         self.error: str | None = None
         self.has_pt15m = False
+        self.pt15m_count = 0
         self.known_count = 0
         self.forecast_count = 0
+        self.current_source = "missing"
 
     @property
     def options(self) -> dict[str, Any]:
         return dict(self.entry.options)
 
+    def _num(self, key: str, default: float = 0.0) -> float:
+        try:
+            return float(self.entry.options.get(key, default))
+        except (TypeError, ValueError):
+            return default
+
     @property
     def gas_variable_addon(self) -> float:
-        """Return active gas variable add-on, following the existing HA helper.
-
-        This preserves the already configured tariff-change automation. If the
-        helper is unavailable, fall back to the split configured components.
-        """
         state = self.hass.states.get(GAS_VARIABLE_ADDON_ENTITY)
         if state is not None and state.state not in {"unknown", "unavailable", "none", "None", ""}:
             try:
@@ -144,12 +139,6 @@ class DummyOSPricesCoordinator:
             "gas_grid_per_day": self._num(CONF_GAS_GRID_PER_DAY),
         }
 
-    def _num(self, key: str, default: float = 0.0) -> float:
-        try:
-            return float(self.entry.options.get(key, default))
-        except (TypeError, ValueError):
-            return default
-
     @property
     def gas_market_entity(self) -> str:
         return str(self.entry.options.get(CONF_GAS_MARKET_ENTITY, DEFAULT_GAS_MARKET_ENTITY))
@@ -167,9 +156,7 @@ class DummyOSPricesCoordinator:
     @property
     def gas_all_in_price(self) -> float | None:
         market = self.gas_market_price
-        if market is None:
-            return None
-        return round(market + self.gas_variable_addon, 5)
+        return None if market is None else round(market + self.gas_variable_addon, 5)
 
     async def async_setup(self) -> None:
         await self.async_refresh()
@@ -200,7 +187,6 @@ class DummyOSPricesCoordinator:
         self.hass.async_create_task(self.async_refresh())
 
     async def async_refresh(self) -> None:
-        """Refresh known and forecast price sources."""
         session = async_get_clientsession(self.hass)
         try:
             async with session.get(PRICES_URL, timeout=20) as response:
@@ -224,39 +210,50 @@ class DummyOSPricesCoordinator:
         self._notify()
 
     def _build_timeline(self, prices_payload: dict[str, Any], forecast_payload: dict[str, Any]) -> list[PricePoint]:
-        known_raw = prices_payload.get("prices_15m") or []
-        self.has_pt15m = prices_payload.get("has_pt15m") is True and bool(known_raw)
-        if not self.has_pt15m:
-            known_raw = prices_payload.get("prices") or []
+        """Build a rolling timeline with known prices always preferred.
+
+        PT15M is primary. The full hourly day-ahead list is also normalized to
+        quarter slots as a gap fallback. This prevents a missing/stale PT15M
+        slice from making a future forecast look like the current price.
+        """
+        pt15_raw = prices_payload.get("prices_15m") or []
+        self.has_pt15m = prices_payload.get("has_pt15m") is True and bool(pt15_raw)
 
         known: dict[datetime, PricePoint] = {}
-        source_resolution = 15 if self.has_pt15m else 60
-        for item in known_raw:
+
+        # Hourly known prices provide robust coverage for today/tomorrow.
+        for item in prices_payload.get("prices") or []:
             start = self._parse_time(item.get("time") or item.get("timestamp") or item.get("start"))
             market = self._eur_mwh_to_kwh(item.get("price"))
             if start is None or market is None:
                 continue
-            if source_resolution == 15:
-                known[start] = self._compose_point(start, market, "known_pt15m", 15)
-            else:
-                for quarter in range(4):
-                    q_start = start + timedelta(minutes=quarter * QUARTER_MINUTES)
-                    known[q_start] = self._compose_point(q_start, market, "known_hourly_fallback", 60)
+            for quarter in range(4):
+                q_start = start + timedelta(minutes=quarter * QUARTER_MINUTES)
+                known[q_start] = self._compose_point(q_start, market, "known_hourly_fallback", 60)
 
+        # PT15M overrides matching hourly slots.
+        pt15_count = 0
+        if self.has_pt15m:
+            for item in pt15_raw:
+                start = self._parse_time(item.get("time") or item.get("timestamp") or item.get("start"))
+                market = self._eur_mwh_to_kwh(item.get("price"))
+                if start is None or market is None:
+                    continue
+                known[start] = self._compose_point(start, market, "known_pt15m", 15)
+                pt15_count += 1
+        self.pt15m_count = pt15_count
         self.known_count = len(known)
-        last_known = max(known) if known else None
 
         forecast_generated = forecast_payload.get("generated_at") or forecast_payload.get("generated")
-        forecasts = forecast_payload.get("forecasts") or []
         future: dict[datetime, PricePoint] = {}
-        for item in forecasts:
+        for item in forecast_payload.get("forecasts") or []:
             start = self._parse_time(item.get("time") or item.get("timestamp") or item.get("start"))
             predicted = self._eur_mwh_to_kwh(item.get("predicted"))
             if start is None or predicted is None:
                 continue
             for quarter in range(4):
                 q_start = start + timedelta(minutes=quarter * QUARTER_MINUTES)
-                if last_known is not None and q_start <= last_known:
+                if q_start in known:
                     continue
                 point = self._compose_point(q_start, predicted, "forecast_hour", 60)
                 point.lower_ex_vat = self._eur_mwh_to_kwh(item.get("lower"))
@@ -271,7 +268,16 @@ class DummyOSPricesCoordinator:
         now_local = dt_util.as_local(dt_util.utcnow())
         current_quarter = now_local.replace(minute=(now_local.minute // 15) * 15, second=0, microsecond=0)
         end = current_quarter + timedelta(minutes=FORECAST_SLOTS * QUARTER_MINUTES)
-        return [merged[t] for t in sorted(merged) if current_quarter <= dt_util.as_local(t) < end][:FORECAST_SLOTS]
+
+        timeline = [
+            merged[t]
+            for t in sorted(merged)
+            if current_quarter <= dt_util.as_local(t) < end
+        ][:FORECAST_SLOTS]
+
+        point = self._find_current_point(timeline)
+        self.current_source = point.kind if point is not None else "missing"
+        return timeline
 
     def _compose_point(self, start: datetime, market_ex_vat: float, kind: str, source_resolution: int) -> PricePoint:
         vat_factor = 1.0 + self._num(CONF_VAT_PERCENT, 21.0) / 100.0
@@ -287,6 +293,19 @@ class DummyOSPricesCoordinator:
             kind=kind,
             source_resolution_minutes=source_resolution,
         )
+
+    @staticmethod
+    def _find_current_point(points: list[PricePoint]) -> PricePoint | None:
+        now = dt_util.as_local(dt_util.utcnow())
+        for point in points:
+            local = dt_util.as_local(point.start)
+            if local <= now < local + timedelta(minutes=QUARTER_MINUTES):
+                return point
+        return None
+
+    @property
+    def current_point(self) -> PricePoint | None:
+        return self._find_current_point(self.points)
 
     def _publish_states(self) -> None:
         point = self.current_point
@@ -311,12 +330,7 @@ class DummyOSPricesCoordinator:
         self.hass.states.async_set(
             "sensor.do_prices_timeline",
             len(self.points),
-            {
-                **common,
-                "point_format": "dict",
-                "recorder_recommendation": "exclude this timeline sensor from Recorder",
-                "points": [p.as_dict() for p in self.points],
-            },
+            {**common, "point_format": "dict", "recorder_recommendation": "exclude this timeline sensor from Recorder", "points": [p.as_dict() for p in self.points]},
         )
         tariff = self.tariff_snapshot
         self.hass.states.async_set(
@@ -328,13 +342,7 @@ class DummyOSPricesCoordinator:
         self.hass.states.async_set(
             "sensor.do_prices_gas_market",
             gas_market,
-            {
-                "unit_of_measurement": "EUR/m3",
-                "source": "EnergyZero",
-                "source_entity": self.gas_market_entity,
-                "resolution": "daily",
-                "internal_resolution_minutes": 15,
-            },
+            {"unit_of_measurement": "EUR/m3", "source": "EnergyZero", "source_entity": self.gas_market_entity, "resolution": "daily", "internal_resolution_minutes": 15},
         )
         self.hass.states.async_set(
             "sensor.do_prices_gas_all_in",
@@ -379,15 +387,6 @@ class DummyOSPricesCoordinator:
         return parsed
 
     @property
-    def current_point(self) -> PricePoint | None:
-        now = dt_util.as_local(dt_util.utcnow())
-        for point in self.points:
-            local = dt_util.as_local(point.start)
-            if local <= now < local + timedelta(minutes=15):
-                return point
-        return self.points[0] if self.points else None
-
-    @property
     def freshness(self) -> str:
         if self.last_update is None:
             return "not_loaded"
@@ -403,11 +402,13 @@ class DummyOSPricesCoordinator:
             "prices_generated_at": self.source_generated_at,
             "forecast_generated_at": self.forecast_generated_at,
             "has_pt15m": self.has_pt15m,
+            "pt15m_slots": self.pt15m_count,
             "known_slots": self.known_count,
             "forecast_slots": self.forecast_count,
             "timeline_slots": len(self.points),
             "resolution_minutes": QUARTER_MINUTES,
-            "actual_source": "stroomvoorspeller_prices_15m" if self.has_pt15m else "stroomvoorspeller_prices_hourly_fallback",
+            "current_price_source": self.current_source,
+            "actual_source": "stroomvoorspeller_prices_15m_with_hourly_gap_fallback" if self.has_pt15m else "stroomvoorspeller_prices_hourly_fallback",
             "forecast_source": "stroomvoorspeller_forecast",
             "attribution": SOURCE_ATTRIBUTION,
             "error": self.error,
