@@ -49,59 +49,8 @@ _ENTITY_ID_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
 )
 
 
-def _apply_entity_name_policy() -> None:
-    """Apply HA-native entity naming without duplicated Dummy OS prefixes.
-
-    The integration remains named "Dummy OS Data", while its shared device is
-    presented as "Dummy OS". Static entities are normalized by their base
-    initializer. Dynamic Weather current entities set their name after the
-    Weather base initializer, so they are normalized once more after their own
-    initializer completes. Entity IDs and unique IDs remain unchanged.
-    """
-    from . import select as select_platform
-    from . import sensor as sensor_platform
-    from .select import DummyOSHomeProfileSelect
-    from .sensor import (
-        DummyOSBaseSensor,
-        DummyOSWeatherBaseSensor,
-        DummyOSWeatherCurrentSensor,
-    )
-
-    sensor_platform.NAME = "Dummy OS"
-    select_platform.NAME = "Dummy OS"
-
-    def _wrap_init(entity_class: type) -> None:
-        if getattr(entity_class, "_dummy_os_name_policy_wrapped", False):
-            return
-        original_init = entity_class.__init__
-
-        def _relative_init(self, *args, **kwargs) -> None:
-            original_init(self, *args, **kwargs)
-            name = getattr(self, "_attr_name", None)
-            if isinstance(name, str) and name.startswith("Dummy OS "):
-                self._attr_name = name.removeprefix("Dummy OS ")
-            self._attr_has_entity_name = True
-
-        entity_class.__init__ = _relative_init
-        entity_class._dummy_os_name_policy_wrapped = True
-
-    # Home and static Weather entities inherit a class-level name before their
-    # base initializer completes.
-    _wrap_init(DummyOSBaseSensor)
-    _wrap_init(DummyOSWeatherBaseSensor)
-
-    # Dynamic Weather current sensors assign their full name after the Weather
-    # base initializer. Normalize that final value as well.
-    _wrap_init(DummyOSWeatherCurrentSensor)
-
-    # The profile select follows the same device-relative naming convention.
-    _wrap_init(DummyOSHomeProfileSelect)
-
-
 async def async_setup_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry) -> bool:
     """Set up Dummy OS Data from a config entry."""
-    _apply_entity_name_policy()
-
     coordinator = DummyOSHomeDataCoordinator(hass, entry)
     await coordinator.async_setup()
     entry.runtime_data = coordinator
