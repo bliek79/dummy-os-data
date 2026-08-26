@@ -52,15 +52,20 @@ _ENTITY_ID_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
 def _apply_entity_name_policy() -> None:
     """Apply HA-native entity naming without duplicated Dummy OS prefixes.
 
-    The integration remains named "Dummy OS Data", while its single device is
-    presented as "Dummy OS". Every entity instance gets a relative name before
-    Home Assistant builds its friendly name. Entity IDs and unique IDs remain
-    unchanged.
+    The integration remains named "Dummy OS Data", while its shared device is
+    presented as "Dummy OS". Static entities are normalized by their base
+    initializer. Dynamic Weather current entities set their name after the
+    Weather base initializer, so they are normalized once more after their own
+    initializer completes. Entity IDs and unique IDs remain unchanged.
     """
     from . import select as select_platform
     from . import sensor as sensor_platform
     from .select import DummyOSHomeProfileSelect
-    from .sensor import DummyOSBaseSensor, DummyOSWeatherBaseSensor
+    from .sensor import (
+        DummyOSBaseSensor,
+        DummyOSWeatherBaseSensor,
+        DummyOSWeatherCurrentSensor,
+    )
 
     sensor_platform.NAME = "Dummy OS"
     select_platform.NAME = "Dummy OS"
@@ -80,10 +85,16 @@ def _apply_entity_name_policy() -> None:
         entity_class.__init__ = _relative_init
         entity_class._dummy_os_name_policy_wrapped = True
 
-    # Base initializers cover all Home and Weather subclasses, including the
-    # static Weather entities that were still duplicated in alpha.8.2.
+    # Home and static Weather entities inherit a class-level name before their
+    # base initializer completes.
     _wrap_init(DummyOSBaseSensor)
     _wrap_init(DummyOSWeatherBaseSensor)
+
+    # Dynamic Weather current sensors assign their full name after the Weather
+    # base initializer. Normalize that final value as well.
+    _wrap_init(DummyOSWeatherCurrentSensor)
+
+    # The profile select follows the same device-relative naming convention.
     _wrap_init(DummyOSHomeProfileSelect)
 
 
