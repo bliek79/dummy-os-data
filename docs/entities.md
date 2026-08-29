@@ -1,4 +1,4 @@
-# Entity specification - 0.1.0-alpha.11.0
+# Entity specification - 0.1.0-alpha.11.1
 
 | Entity | Meaning | Unit | Device class | State class | Update |
 |---|---|---|---|---|---|
@@ -41,6 +41,15 @@ The percentage accuracy formula will be defined before these entities are activa
 | `sensor.do_solar_actual_power_total` | Inverter total actual AC power | W | normal |
 | `sensor.do_solar_model` | Model, roof configuration and calculation metadata | text | normal |
 
-Solar remains observation/shadow in alpha.11.0. Package 86 and Solcast remain
+Solar remains observation/shadow in alpha.11.1. Package 86 and Solcast remain
 the reference until forecast snapshots, completed-day actuals and error metrics
 have been validated.
+
+### Solar entity-ID migration
+
+Alpha.11.1 migrates the 13 entity IDs observed on a clean alpha.11.0 install
+from `sensor.dummy_os_solar_*` to the fixed `sensor.do_solar_*` contract. The
+migration uses each exact observed source ID and the existing integration
+`unique_id`; it does not infer or guess a generated prefix. Home Assistant
+history and entity-registry settings therefore remain attached to the same
+entities.

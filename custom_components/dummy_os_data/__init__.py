@@ -11,6 +11,7 @@ from homeassistant.helpers import entity_registry as er
 from .const import DOMAIN, PLATFORMS
 from .coordinator import DummyOSHomeDataCoordinator
 from .degree_days import DummyOSDegreeDaysCoordinator
+from .entity_migrations import is_known_generated_entity_id
 from .prices import DummyOSPricesCoordinator
 from .solar import DummyOSSolarCoordinator
 
@@ -104,8 +105,7 @@ def _async_migrate_generated_entity_ids(hass: HomeAssistant) -> None:
         if current_entity_id is None or current_entity_id == target_entity_id:
             continue
 
-        known_generated_prefix = f"{platform}.dummy_os_data_dummy_os_"
-        if not current_entity_id.startswith(known_generated_prefix):
+        if not is_known_generated_entity_id(platform, unique_id, current_entity_id):
             continue
 
         if registry.async_get(target_entity_id) is not None:
