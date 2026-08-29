@@ -4,7 +4,7 @@ from __future__ import annotations
 
 DOMAIN = "dummy_os_data"
 NAME = "Dummy OS"
-VERSION = "0.1.0-alpha.10.3"
+VERSION = "0.1.0-alpha.11.0"
 
 CONF_HOME_POWER_ENTITY = "home_power_entity"
 DEFAULT_HOME_POWER_ENTITY = "sensor.home_power"
@@ -28,6 +28,26 @@ CONF_GAS_GRID_PER_DAY = "gas_grid_per_day"
 
 DEFAULT_GAS_MARKET_ENTITY = "sensor.energyzero_today_gas_current_hour_price"
 GAS_VARIABLE_ADDON_ENTITY = "input_number.gas_markup_per_m3"
+
+CONF_SOLAR_ACTUAL_TOTAL_ENTITY = "solar_actual_total_entity"
+CONF_SOLAR_ACTUAL_NORTH_DC_ENTITY = "solar_actual_north_dc_entity"
+CONF_SOLAR_ACTUAL_SOUTH_DC_ENTITY = "solar_actual_south_dc_entity"
+CONF_SOLAR_LATITUDE = "solar_latitude"
+CONF_SOLAR_LONGITUDE = "solar_longitude"
+CONF_SOLAR_NORTH_DC_KWP = "solar_north_dc_kwp"
+CONF_SOLAR_NORTH_AC_KW = "solar_north_ac_kw"
+CONF_SOLAR_NORTH_TILT = "solar_north_tilt"
+CONF_SOLAR_NORTH_AZIMUTH = "solar_north_open_meteo_azimuth"
+CONF_SOLAR_NORTH_FACTOR = "solar_north_performance_factor"
+CONF_SOLAR_SOUTH_DC_KWP = "solar_south_dc_kwp"
+CONF_SOLAR_SOUTH_AC_KW = "solar_south_ac_kw"
+CONF_SOLAR_SOUTH_TILT = "solar_south_tilt"
+CONF_SOLAR_SOUTH_AZIMUTH = "solar_south_open_meteo_azimuth"
+CONF_SOLAR_SOUTH_FACTOR = "solar_south_performance_factor"
+
+DEFAULT_SOLAR_ACTUAL_TOTAL_ENTITY = "sensor.sb3_6_1av_41_857_pv_power"
+DEFAULT_SOLAR_ACTUAL_NORTH_DC_ENTITY = "sensor.sb3_6_1av_41_857_pv_power_a"
+DEFAULT_SOLAR_ACTUAL_SOUTH_DC_ENTITY = "sensor.sb3_6_1av_41_857_pv_power_b"
 
 PLATFORMS = ["sensor", "select"]
 

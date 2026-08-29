@@ -104,6 +104,45 @@ Important Weather entities include:
 - `sensor.do_weather_last_update`
 - `sensor.do_weather_model`
 
+### Solar Forecast Shadow Layer
+
+The native Solar module uses two independent Open-Meteo
+`global_tilted_irradiance` requests and converts the radiation forecast into
+15-minute PV energy for the north and south roof planes. It publishes a rolling
+72-hour / 288-slot timeline for north, south and total. Radiation timestamps are
+shifted to slot start because Open-Meteo radiation is a backward interval
+average.
+
+Default installation parameters:
+
+- location: `51.828981, 4.839871`;
+- north: 2.96 kWp DC, 2.45 kW AC, 37 degrees, Open-Meteo azimuth 180 degrees, factor 0.90;
+- south: 1.48 kWp DC, 1.23 kW AC, 37 degrees, Open-Meteo azimuth 0 degrees, factor 0.90;
+- actual total AC: `sensor.sb3_6_1av_41_857_pv_power`;
+- actual north DC input: `sensor.sb3_6_1av_41_857_pv_power_a`;
+- actual south DC input: `sensor.sb3_6_1av_41_857_pv_power_b`.
+
+The north/south actual AC-equivalent split uses total inverter AC power in the
+same ratio as SMA inputs A and B. The module is observation/shadow only. Solcast
+and package 86 remain active as benchmarks until daily history and forecast
+quality are validated.
+
+Important Solar entities include:
+
+- `sensor.do_solar_status`
+- `sensor.do_solar_forecast_timeline`
+- `sensor.do_solar_forecast_today_north`
+- `sensor.do_solar_forecast_today_south`
+- `sensor.do_solar_forecast_today_total`
+- `sensor.do_solar_forecast_tomorrow_north`
+- `sensor.do_solar_forecast_tomorrow_south`
+- `sensor.do_solar_forecast_tomorrow_total`
+- `sensor.do_solar_forecast_next_quarter`
+- `sensor.do_solar_actual_power_north`
+- `sensor.do_solar_actual_power_south`
+- `sensor.do_solar_actual_power_total`
+- `sensor.do_solar_model`
+
 ### Prices Shadow Layer
 
 The first Prices alpha is observation-only. It does not perform physical control and does not replace EMS execution logic.
@@ -164,11 +203,15 @@ The active Home Forecast profile can be selected through `select.do_home_profile
 
 Prices tariff components are configured under the Dummy OS Data integration options. Price components should be entered on the basis indicated by the option name. The current alpha uses inclusive-VAT supplier/tax components and applies the configured VAT percentage to the raw EPEX market component.
 
+Solar source entities, roof geometry, capacity limits and performance factors
+are also configurable through the integration options. Solar azimuth values use
+the Open-Meteo convention: 0 degrees is south and +/-180 degrees is north.
+
 ## Data and Recorder behavior
 
 Dummy OS Data distinguishes between operational state and large timeline payloads.
 
-Compact states and useful metadata can be recorded normally by Home Assistant. Large timeline attributes should be excluded from Recorder. Home and Weather use formal Recorder-safe entity attributes; the first Prices shadow timeline should be manually excluded during alpha validation.
+Compact states and useful metadata can be recorded normally by Home Assistant. Large timeline attributes should be excluded from Recorder. Home, Weather and Solar use formal Recorder-safe entity attributes; the first Prices shadow timeline should be manually excluded during alpha validation.
 
 Home Forecast historical observations and evaluation data are also persisted internally by the integration.
 
@@ -222,7 +265,7 @@ Planned development areas include:
 
 - Prices validation dashboard and Google Sheets evaluation;
 - immutable price/tariff history and actual import/export cost records;
-- Solar Forecast;
+- Solar forecast evaluation, calibration and Solcast benchmark history;
 - heat-demand and gas forecast models;
 - gas/TTF forecast evaluation;
 - broader forecast-quality diagnostics;

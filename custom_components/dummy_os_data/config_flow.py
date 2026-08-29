@@ -25,12 +25,30 @@ from .const import (
     CONF_GAS_SUPPLIER,
     CONF_GAS_TAX,
     CONF_HOME_POWER_ENTITY,
+    CONF_SOLAR_ACTUAL_NORTH_DC_ENTITY,
+    CONF_SOLAR_ACTUAL_SOUTH_DC_ENTITY,
+    CONF_SOLAR_ACTUAL_TOTAL_ENTITY,
+    CONF_SOLAR_LATITUDE,
+    CONF_SOLAR_LONGITUDE,
+    CONF_SOLAR_NORTH_AC_KW,
+    CONF_SOLAR_NORTH_AZIMUTH,
+    CONF_SOLAR_NORTH_DC_KWP,
+    CONF_SOLAR_NORTH_FACTOR,
+    CONF_SOLAR_NORTH_TILT,
+    CONF_SOLAR_SOUTH_AC_KW,
+    CONF_SOLAR_SOUTH_AZIMUTH,
+    CONF_SOLAR_SOUTH_DC_KWP,
+    CONF_SOLAR_SOUTH_FACTOR,
+    CONF_SOLAR_SOUTH_TILT,
     CONF_TARIFF_PROFILE_ID,
     CONF_TARIFF_SUPPLIER,
     CONF_TARIFF_VALID_FROM,
     CONF_VAT_PERCENT,
     DEFAULT_GAS_MARKET_ENTITY,
     DEFAULT_HOME_POWER_ENTITY,
+    DEFAULT_SOLAR_ACTUAL_NORTH_DC_ENTITY,
+    DEFAULT_SOLAR_ACTUAL_SOUTH_DC_ENTITY,
+    DEFAULT_SOLAR_ACTUAL_TOTAL_ENTITY,
     DOMAIN,
     NAME,
 )
@@ -107,6 +125,27 @@ class DummyOSDataOptionsFlow(config_entries.OptionsFlow):
                 vol.Required(CONF_GAS_TAX, default=self._current(CONF_GAS_TAX, 0.0)): vol.Coerce(float),
                 vol.Required(CONF_GAS_FIXED_SUPPLY_PER_DAY, default=self._current(CONF_GAS_FIXED_SUPPLY_PER_DAY, 0.0)): vol.Coerce(float),
                 vol.Required(CONF_GAS_GRID_PER_DAY, default=self._current(CONF_GAS_GRID_PER_DAY, 0.0)): vol.Coerce(float),
+                vol.Required(CONF_SOLAR_ACTUAL_TOTAL_ENTITY, default=self._current(CONF_SOLAR_ACTUAL_TOTAL_ENTITY, DEFAULT_SOLAR_ACTUAL_TOTAL_ENTITY)): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Required(CONF_SOLAR_ACTUAL_NORTH_DC_ENTITY, default=self._current(CONF_SOLAR_ACTUAL_NORTH_DC_ENTITY, DEFAULT_SOLAR_ACTUAL_NORTH_DC_ENTITY)): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Required(CONF_SOLAR_ACTUAL_SOUTH_DC_ENTITY, default=self._current(CONF_SOLAR_ACTUAL_SOUTH_DC_ENTITY, DEFAULT_SOLAR_ACTUAL_SOUTH_DC_ENTITY)): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Required(CONF_SOLAR_LATITUDE, default=self._current(CONF_SOLAR_LATITUDE, 51.828981)): vol.Coerce(float),
+                vol.Required(CONF_SOLAR_LONGITUDE, default=self._current(CONF_SOLAR_LONGITUDE, 4.839871)): vol.Coerce(float),
+                vol.Required(CONF_SOLAR_NORTH_DC_KWP, default=self._current(CONF_SOLAR_NORTH_DC_KWP, 2.96)): vol.Coerce(float),
+                vol.Required(CONF_SOLAR_NORTH_AC_KW, default=self._current(CONF_SOLAR_NORTH_AC_KW, 2.45)): vol.Coerce(float),
+                vol.Required(CONF_SOLAR_NORTH_TILT, default=self._current(CONF_SOLAR_NORTH_TILT, 37.0)): vol.Coerce(float),
+                vol.Required(CONF_SOLAR_NORTH_AZIMUTH, default=self._current(CONF_SOLAR_NORTH_AZIMUTH, 180.0)): vol.Coerce(float),
+                vol.Required(CONF_SOLAR_NORTH_FACTOR, default=self._current(CONF_SOLAR_NORTH_FACTOR, 0.9)): vol.Coerce(float),
+                vol.Required(CONF_SOLAR_SOUTH_DC_KWP, default=self._current(CONF_SOLAR_SOUTH_DC_KWP, 1.48)): vol.Coerce(float),
+                vol.Required(CONF_SOLAR_SOUTH_AC_KW, default=self._current(CONF_SOLAR_SOUTH_AC_KW, 1.23)): vol.Coerce(float),
+                vol.Required(CONF_SOLAR_SOUTH_TILT, default=self._current(CONF_SOLAR_SOUTH_TILT, 37.0)): vol.Coerce(float),
+                vol.Required(CONF_SOLAR_SOUTH_AZIMUTH, default=self._current(CONF_SOLAR_SOUTH_AZIMUTH, 0.0)): vol.Coerce(float),
+                vol.Required(CONF_SOLAR_SOUTH_FACTOR, default=self._current(CONF_SOLAR_SOUTH_FACTOR, 0.9)): vol.Coerce(float),
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema)

@@ -21,7 +21,7 @@
     "step": {
       "init": {
         "title": "Dummy OS Data options",
-        "description": "Configure sources and the active tariff profile. Supplier and tax components are entered including VAT; the VAT percentage is applied to the raw EPEX market component.",
+        "description": "Configure Home, Prices and Solar sources. Solar azimuth uses the Open-Meteo convention: 0 degrees is south and +/-180 degrees is north.",
         "data": {
           "home_power_entity": "Home power source",
           "tariff_profile_id": "Tariff profile ID",
@@ -39,7 +39,22 @@
           "gas_supplier_incl_vat": "Gas supplier component incl. VAT (EUR/m3)",
           "gas_tax_incl_vat": "Gas energy tax incl. VAT (EUR/m3)",
           "gas_fixed_supply_per_day": "Gas fixed supply cost (EUR/day)",
-          "gas_grid_per_day": "Gas grid cost (EUR/day)"
+          "gas_grid_per_day": "Gas grid cost (EUR/day)",
+          "solar_actual_total_entity": "Solar actual total AC power sensor",
+          "solar_actual_north_dc_entity": "Solar north DC input power sensor (SMA A)",
+          "solar_actual_south_dc_entity": "Solar south DC input power sensor (SMA B)",
+          "solar_latitude": "Solar latitude",
+          "solar_longitude": "Solar longitude",
+          "solar_north_dc_kwp": "North roof DC capacity (kWp)",
+          "solar_north_ac_kw": "North roof AC limit (kW)",
+          "solar_north_tilt": "North roof tilt (degrees)",
+          "solar_north_open_meteo_azimuth": "North roof Open-Meteo azimuth (degrees)",
+          "solar_north_performance_factor": "North roof performance factor",
+          "solar_south_dc_kwp": "South roof DC capacity (kWp)",
+          "solar_south_ac_kw": "South roof AC limit (kW)",
+          "solar_south_tilt": "South roof tilt (degrees)",
+          "solar_south_open_meteo_azimuth": "South roof Open-Meteo azimuth (degrees)",
+          "solar_south_performance_factor": "South roof performance factor"
         }
       }
     }
