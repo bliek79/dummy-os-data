@@ -8,6 +8,18 @@
 
 `Home Power sensor (W/kW)` -> runtime power integration -> completed 15-minute kWh record -> local persistent storage -> later forecast models -> evaluation -> calibration.
 
+## Solar Forecast shadow flow
+
+`Open-Meteo GTI north + GTI south` -> backward-average timestamp normalization
+-> per-roof physical PV conversion -> AC cap -> 15-minute kWh -> combined
+288-slot timeline.
+
+Actual roof power is derived independently:
+
+`SMA total AC x SMA input A/(A+B)` for north and the complementary share for
+south. Forecast and actual data remain observation-only until daily evaluation
+and calibration have been proven against package 86 and Solcast.
+
 ## Profile separation
 
 Every completed quarter stores one profile:

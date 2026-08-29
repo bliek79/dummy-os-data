@@ -12,6 +12,7 @@ from .const import DOMAIN, PLATFORMS
 from .coordinator import DummyOSHomeDataCoordinator
 from .degree_days import DummyOSDegreeDaysCoordinator
 from .prices import DummyOSPricesCoordinator
+from .solar import DummyOSSolarCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,6 +56,19 @@ _ENTITY_ID_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("sensor", "do_prices_tariff_profile", "sensor.do_prices_tariff_profile"),
     ("sensor", "do_prices_gas_market", "sensor.do_prices_gas_market"),
     ("sensor", "do_prices_gas_all_in", "sensor.do_prices_gas_all_in"),
+    ("sensor", "do_solar_status", "sensor.do_solar_status"),
+    ("sensor", "do_solar_forecast_timeline", "sensor.do_solar_forecast_timeline"),
+    ("sensor", "do_solar_forecast_today_north", "sensor.do_solar_forecast_today_north"),
+    ("sensor", "do_solar_forecast_today_south", "sensor.do_solar_forecast_today_south"),
+    ("sensor", "do_solar_forecast_today_total", "sensor.do_solar_forecast_today_total"),
+    ("sensor", "do_solar_forecast_tomorrow_north", "sensor.do_solar_forecast_tomorrow_north"),
+    ("sensor", "do_solar_forecast_tomorrow_south", "sensor.do_solar_forecast_tomorrow_south"),
+    ("sensor", "do_solar_forecast_tomorrow_total", "sensor.do_solar_forecast_tomorrow_total"),
+    ("sensor", "do_solar_forecast_next_quarter", "sensor.do_solar_forecast_next_quarter"),
+    ("sensor", "do_solar_actual_power_north", "sensor.do_solar_actual_power_north"),
+    ("sensor", "do_solar_actual_power_south", "sensor.do_solar_actual_power_south"),
+    ("sensor", "do_solar_actual_power_total", "sensor.do_solar_actual_power_total"),
+    ("sensor", "do_solar_model", "sensor.do_solar_model"),
     ("select", "do_home_profile", "select.do_home_profile"),
 )
 
@@ -69,6 +83,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry) 
 
     coordinator.prices = DummyOSPricesCoordinator(hass, entry)
     await coordinator.prices.async_setup()
+
+    coordinator.solar = DummyOSSolarCoordinator(hass, entry)
+    await coordinator.solar.async_setup()
 
     entry.runtime_data = coordinator
 
@@ -112,6 +129,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry)
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
+        solar = getattr(entry.runtime_data, "solar", None)
+        if solar is not None:
+            await solar.async_shutdown()
         prices = getattr(entry.runtime_data, "prices", None)
         if prices is not None:
             await prices.async_shutdown()
