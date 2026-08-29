@@ -38,7 +38,13 @@ from .const import (
     FORECAST_SLOTS,
     QUARTER_MINUTES,
 )
-from .solar_model import backward_average_slot_start, pv_power_kw, slot_energy_kwh, split_ac_power
+from .solar_model import (
+    backward_average_slot_start,
+    next_complete_slot,
+    pv_power_kw,
+    slot_energy_kwh,
+    split_ac_power,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -210,7 +216,9 @@ class DummyOSSolarCoordinator:
             "latitude": self.latitude,
             "longitude": self.longitude,
             "minutely_15": "global_tilted_irradiance",
-            "forecast_minutely_15": FORECAST_SLOTS + 1,
+            # Two spare source stamps are required by backward-average alignment;
+            # one additional stamp covers refreshes after an exact quarter boundary.
+            "forecast_minutely_15": FORECAST_SLOTS + 3,
             "tilt": roof.tilt_deg,
             "azimuth": roof.open_meteo_azimuth_deg,
             "models": OPEN_METEO_SOLAR_MODEL,
@@ -256,9 +264,7 @@ class DummyOSSolarCoordinator:
             raise ValueError("Open-Meteo response missing solar time axis or irradiance")
 
         local_now = dt_util.as_local(dt_util.utcnow())
-        base = local_now.replace(second=0, microsecond=0)
-        floor = base.replace(minute=(base.minute // QUARTER_MINUTES) * QUARTER_MINUTES)
-        next_quarter = floor if base == floor else floor + timedelta(minutes=QUARTER_MINUTES)
+        next_quarter = next_complete_slot(local_now, QUARTER_MINUTES)
         cutoff_utc = dt_util.as_utc(next_quarter)
         timezone = ZoneInfo(OPEN_METEO_SOLAR_TIMEZONE)
         result: dict[datetime, float] = {}

@@ -133,7 +133,9 @@ class DummyOSSolarDailySensor(DummyOSSolarBaseSensor):
         self._attr_suggested_object_id = object_id
 
     @property
-    def native_value(self) -> float:
+    def native_value(self) -> float | None:
+        if not self.solar.points:
+            return None
         local_today = dt_util.as_local(dt_util.utcnow()).date()
         target = local_today if self.day == "today" else local_today + timedelta(days=1)
         return self.solar.energy_for_local_date(target, self.roof)

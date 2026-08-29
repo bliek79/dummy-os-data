@@ -33,6 +33,17 @@ class SolarModelTests(unittest.TestCase):
             datetime(2026, 8, 29, 10, 0, tzinfo=timezone.utc),
         )
 
+    def test_next_complete_slot_after_boundary(self) -> None:
+        stamp = datetime(2026, 8, 29, 10, 0, 20, tzinfo=timezone.utc)
+        self.assertEqual(
+            solar_model.next_complete_slot(stamp),
+            datetime(2026, 8, 29, 10, 15, tzinfo=timezone.utc),
+        )
+
+    def test_exact_boundary_is_retained(self) -> None:
+        stamp = datetime(2026, 8, 29, 10, 15, tzinfo=timezone.utc)
+        self.assertEqual(solar_model.next_complete_slot(stamp), stamp)
+
     def test_actual_split_preserves_total(self) -> None:
         north, south = solar_model.split_ac_power(3000, 2000, 1000)
         self.assertEqual(north, 2000.0)

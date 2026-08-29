@@ -29,7 +29,8 @@ observation/shadow: package 86 en Solcast blijven actief als referentie.
 - Configureerbare locatie, bronentiteiten, dakcapaciteiten, AC-limieten,
   hellingshoeken, Open-Meteo-azimut en prestatiefactoren.
 - Nederlandse en Engelse optievertalingen.
-- Vijf unit-tests voor de onafhankelijke Solar-rekenlaag.
+- Acht unit-tests voor de onafhankelijke Solar-rekenlaag en twee
+  releaseconsistentietests.
 
 ### Gewijzigd
 
@@ -87,6 +88,6 @@ observation/shadow: package 86 en Solcast blijven actief als referentie.
 ### Installatiepakket
 
 - Bestand: `Dummy_OS_Data_0.1.0-alpha.11.0_HA_install.zip`
-- SHA-256: `8d979120d6229145b51d5b557f1f9b3a3190156761a6d0e98a02f0cfbb210062`
+- SHA-256: `1b9326e2627d3265915bf637a32fdd4dc74daf403c02f4ff1ffd1555f5846549`
 - De ZIP bevat `custom_components/dummy_os_data` en kan over de bestaande
   custom integration worden uitgepakt.
