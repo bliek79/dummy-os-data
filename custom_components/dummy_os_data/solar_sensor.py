@@ -12,7 +12,7 @@ from homeassistant.core import callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, FORECAST_SLOTS, NAME, VERSION
+from .const import DOMAIN, FORECAST_SLOTS, NAME, SOLAR_MIN_VALID_COVERAGE, VERSION
 from .solar import OPEN_METEO_SOLAR_MODEL, SOLAR_RESOLUTION_MINUTES
 
 
@@ -31,6 +31,7 @@ def build_solar_sensors(coordinator) -> list[SensorEntity]:
         DummyOSSolarActualPowerSensor(coordinator, "north"),
         DummyOSSolarActualPowerSensor(coordinator, "south"),
         DummyOSSolarActualPowerSensor(coordinator, "total"),
+        DummyOSSolarLastCompletedQuarterSensor(coordinator),
         DummyOSSolarModelSensor(coordinator),
     ]
 
@@ -72,6 +73,8 @@ class DummyOSSolarStatusSensor(DummyOSSolarBaseSensor):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
+        actual = self.solar.actual_power
+        evaluation = self.solar.last_evaluation
         return {
             "provider": "Open-Meteo",
             "attribution": "Weather data by Open-Meteo.com",
@@ -81,8 +84,21 @@ class DummyOSSolarStatusSensor(DummyOSSolarBaseSensor):
             "age_minutes": self.solar.age_minutes,
             "last_error": self.solar.last_error,
             "slot_count": len(self.solar.points),
+            "source_buffer_slot_count": self.solar.source_point_count,
             "refresh_schedule": "hourly at :00:20",
             "retry_backoff_seconds": [0, 5, 15],
+            "actual_total_available": actual["total"] is not None,
+            "actual_roof_split_available": (
+                actual["north"] is not None and actual["south"] is not None
+            ),
+            "active_evaluation_quarter": (
+                self.solar.active_quarter_start.isoformat()
+                if self.solar.active_quarter_start
+                else None
+            ),
+            "active_forecast_snapshot_available": self.solar.active_forecast_snapshot_available,
+            "last_evaluation_status": evaluation.get("status") if evaluation else None,
+            "last_evaluation_slot": evaluation.get("slot_id") if evaluation else None,
             "mode": "observation_shadow",
         }
 
@@ -109,10 +125,16 @@ class DummyOSSolarTimelineSensor(DummyOSSolarBaseSensor):
             "horizon_hours": 72,
             "slot_count": FORECAST_SLOTS,
             "point_count": len(points),
+            "source_buffer_point_count": self.solar.source_point_count,
             "point_format": "[unix_ms, north_kwh, south_kwh, total_kwh, north_kw, south_kw, total_kw, north_gti_wm2, south_gti_wm2]",
             "interval_semantics": "slot_start; Open-Meteo backward-average timestamp shifted by 15 minutes",
             "forecast_start": points[0].start.isoformat() if points else None,
-            "forecast_end": points[-1].start.isoformat() if points else None,
+            "last_slot_start": points[-1].start.isoformat() if points else None,
+            "forecast_end": (
+                (points[-1].start + timedelta(minutes=SOLAR_RESOLUTION_MINUTES)).isoformat()
+                if points
+                else None
+            ),
             "recorder_points": "excluded",
             "points": [point.as_list() for point in points],
         }
@@ -200,6 +222,31 @@ class DummyOSSolarActualPowerSensor(DummyOSSolarBaseSensor):
         return {"method": self.solar.actual_power["method"], "source_entities": list(self.solar.actual_entities)}
 
 
+class DummyOSSolarLastCompletedQuarterSensor(DummyOSSolarBaseSensor):
+    """Expose one immutable, flat record for automation and Sheets export."""
+
+    _attr_name = "Dummy OS Solar Evaluation Last Completed Quarter"
+    _attr_unique_id = "do_solar_evaluation_last_completed_quarter"
+    _attr_suggested_object_id = "do_solar_evaluation_last_completed_quarter"
+    _attr_icon = "mdi:chart-box-outline"
+
+    @property
+    def native_value(self) -> str | None:
+        evaluation = self.solar.last_evaluation
+        return evaluation.get("slot_id") if evaluation else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        evaluation = self.solar.last_evaluation
+        if evaluation is None:
+            return {
+                "status": "waiting_for_first_completed_quarter",
+                "resolution_minutes": SOLAR_RESOLUTION_MINUTES,
+                "minimum_coverage_percent": SOLAR_MIN_VALID_COVERAGE * 100.0,
+            }
+        return dict(evaluation)
+
+
 class DummyOSSolarModelSensor(DummyOSSolarBaseSensor):
     _attr_name = "Dummy OS Solar Forecast Model"
     _attr_unique_id = "do_solar_model"
@@ -215,6 +262,7 @@ class DummyOSSolarModelSensor(DummyOSSolarBaseSensor):
         return {
             "provider": "Open-Meteo",
             "source_variable": "global_tilted_irradiance",
+            "source_timezone": "UTC",
             "resolution_minutes": SOLAR_RESOLUTION_MINUTES,
             "horizon_hours": 72,
             "forecast_slots": FORECAST_SLOTS,
@@ -222,5 +270,7 @@ class DummyOSSolarModelSensor(DummyOSSolarBaseSensor):
             "south": asdict(self.solar.south),
             "azimuth_convention": "Open-Meteo: 0=south, +/-180=north",
             "calculation": "gti/1000 x dc_kwp x performance_factor; capped per roof at ac_limit_kw",
+            "actual_energy_calculation": "zero-order-hold integration of total AC; north/south split by SMA DC input ratio",
+            "evaluation": "forecast frozen at slot start and compared after a completed quarter with at least 90% coverage",
             "mode": "observation_shadow",
         }

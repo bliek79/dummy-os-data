@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import logging
+import math
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -14,6 +15,7 @@ from aiohttp import ClientError
 from homeassistant.core import Event, HomeAssistant, State, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_track_state_change_event, async_track_time_change
+from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -37,7 +39,11 @@ from .const import (
     DEFAULT_SOLAR_ACTUAL_TOTAL_ENTITY,
     FORECAST_SLOTS,
     QUARTER_MINUTES,
+    SOLAR_MIN_VALID_COVERAGE,
+    SOLAR_STORAGE_KEY,
+    SOLAR_STORAGE_VERSION,
 )
+from .solar_evaluation import ROOFS, build_quarter_evaluation
 from .solar_model import (
     backward_average_slot_start,
     next_complete_slot,
@@ -50,9 +56,12 @@ from .solar_model import (
 _LOGGER = logging.getLogger(__name__)
 
 OPEN_METEO_SOLAR_ENDPOINT = "https://api.open-meteo.com/v1/forecast"
-OPEN_METEO_SOLAR_TIMEZONE = "Europe/Berlin"
+OPEN_METEO_SOLAR_TIMEZONE = "UTC"
 OPEN_METEO_SOLAR_MODEL = "best_match"
 SOLAR_RESOLUTION_MINUTES = 15
+SOLAR_BUFFER_SLOTS = 4
+SOLAR_REQUEST_EXTRA_SLOTS = 7
+SOLAR_STORAGE_SAVE_DELAY_SECONDS = 30
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,13 +110,50 @@ class DummyOSSolarCoordinator:
     def __init__(self, hass: HomeAssistant, entry) -> None:
         self.hass = hass
         self.entry = entry
-        self.points: list[SolarPoint] = []
+        self._source_points: list[SolarPoint] = []
         self.last_successful_update: datetime | None = None
         self.last_attempt: datetime | None = None
         self.last_error: str | None = None
         self.source_generation_time_ms: dict[str, float | None] = {}
         self.listeners: list[callback] = []
         self._unsubs: list[Any] = []
+        self.store: Store[dict[str, Any]] = Store(
+            hass,
+            SOLAR_STORAGE_VERSION,
+            SOLAR_STORAGE_KEY,
+        )
+        self.last_evaluation: dict[str, Any] | None = None
+        self._quarter_start: datetime | None = None
+        self._forecast_snapshot: dict[str, Any] | None = None
+        self._energy_ws: dict[str, float] = {roof: 0.0 for roof in ROOFS}
+        self._covered_seconds: dict[str, float] = {roof: 0.0 for roof in ROOFS}
+        self._last_sample_time: datetime | None = None
+        self._last_actual: dict[str, float | None] = {roof: None for roof in ROOFS}
+        self._sample_count = 0
+
+    @property
+    def points(self) -> list[SolarPoint]:
+        """Return a rolling 72-hour window aligned to the next complete slot."""
+        if not self._source_points:
+            return []
+        local_now = dt_util.as_local(dt_util.utcnow())
+        cutoff = dt_util.as_utc(next_complete_slot(local_now, QUARTER_MINUTES))
+        return [point for point in self._source_points if point.start >= cutoff][:FORECAST_SLOTS]
+
+    @property
+    def source_point_count(self) -> int:
+        """Return raw aligned points retained for rolling-window continuity."""
+        return len(self._source_points)
+
+    @property
+    def active_quarter_start(self) -> datetime | None:
+        """Return the quarter currently collecting actual power."""
+        return self._quarter_start
+
+    @property
+    def active_forecast_snapshot_available(self) -> bool:
+        """Return whether the active quarter has a valid pre-actual forecast."""
+        return self._forecast_snapshot is not None
 
     def _option(self, key: str, default: Any) -> Any:
         return self.entry.options.get(key, self.entry.data.get(key, default))
@@ -157,23 +203,33 @@ class DummyOSSolarCoordinator:
         )
 
     async def async_setup(self) -> None:
-        """Fetch immediately/hourly and republish live and quarter changes."""
+        """Load evaluation state, fetch Solar data and start listeners."""
+        stored = await self.store.async_load() or {}
+        self.last_evaluation = stored.get("last_evaluation")
         await self.async_refresh()
+
+        now = dt_util.utcnow()
+        self._restore_or_start_quarter(stored.get("active_quarter"), now)
+        self._set_actual_sample(now)
+
         self._unsubs.append(async_track_time_change(self.hass, self._async_hourly_refresh, minute=0, second=20))
         self._unsubs.append(
             async_track_time_change(
                 self.hass,
-                self._quarter_boundary,
+                self._async_quarter_boundary,
                 minute=[0, 15, 30, 45],
                 second=0,
             )
         )
         self._unsubs.append(async_track_state_change_event(self.hass, list(self.actual_entities), self._actual_changed))
+        await self.store.async_save(self._storage_data())
 
     async def async_shutdown(self) -> None:
+        self._integrate_actual_until(dt_util.utcnow())
         for unsub in self._unsubs:
             unsub()
         self._unsubs.clear()
+        await self.store.async_save(self._storage_data())
 
     def async_add_listener(self, listener: callback) -> callback:
         self.listeners.append(listener)
@@ -192,12 +248,177 @@ class DummyOSSolarCoordinator:
 
     @callback
     def _actual_changed(self, _event: Event) -> None:
+        now = dt_util.utcnow()
+        self._integrate_actual_until(now)
+        self._set_actual_sample(now)
+        self.store.async_delay_save(
+            self._storage_data,
+            SOLAR_STORAGE_SAVE_DELAY_SECONDS,
+        )
         self._notify()
 
-    @callback
-    def _quarter_boundary(self, _now: datetime) -> None:
-        """Advance derived quarter entities without refetching Open-Meteo."""
+    async def _async_quarter_boundary(self, now: datetime) -> None:
+        """Finalize actual energy and freeze the new slot forecast."""
+        now_utc = dt_util.as_utc(now)
+        self._integrate_actual_until(now_utc)
+        self._finalize_quarter(now_utc)
+        # This callback is registered for the exact quarter boundary. Use that
+        # logical boundary as capture time so event-loop latency does not turn
+        # an on-time immutable snapshot into a false "late forecast" result.
+        self._start_quarter(now_utc, scheduled_boundary=True)
+        self._set_actual_sample(now_utc)
+        await self.store.async_save(self._storage_data())
         self._notify()
+
+    def _restore_or_start_quarter(
+        self,
+        stored: dict[str, Any] | None,
+        now_utc: datetime,
+    ) -> None:
+        """Restore only the active local quarter; never bridge an offline gap."""
+        local = dt_util.as_local(now_utc)
+        minute = (local.minute // QUARTER_MINUTES) * QUARTER_MINUTES
+        current_start = dt_util.as_utc(
+            local.replace(minute=minute, second=0, microsecond=0)
+        )
+        if isinstance(stored, dict) and stored.get("start") == current_start.isoformat():
+            self._quarter_start = current_start
+            self._forecast_snapshot = (
+                stored.get("forecast_snapshot")
+                if isinstance(stored.get("forecast_snapshot"), dict)
+                else None
+            )
+            for roof in ROOFS:
+                try:
+                    self._energy_ws[roof] = max(
+                        0.0,
+                        float(stored.get("energy_ws", {}).get(roof, 0.0)),
+                    )
+                    self._covered_seconds[roof] = max(
+                        0.0,
+                        float(stored.get("covered_seconds", {}).get(roof, 0.0)),
+                    )
+                except (AttributeError, TypeError, ValueError):
+                    self._energy_ws[roof] = 0.0
+                    self._covered_seconds[roof] = 0.0
+            try:
+                self._sample_count = max(0, int(stored.get("sample_count", 0)))
+            except (TypeError, ValueError):
+                self._sample_count = 0
+            self._last_sample_time = now_utc
+            return
+        self._start_quarter(now_utc)
+
+    def _start_quarter(
+        self,
+        now_utc: datetime,
+        *,
+        scheduled_boundary: bool = False,
+    ) -> None:
+        """Start the quarter containing now and freeze its current forecast."""
+        local = dt_util.as_local(now_utc)
+        minute = (local.minute // QUARTER_MINUTES) * QUARTER_MINUTES
+        local_start = local.replace(minute=minute, second=0, microsecond=0)
+        self._quarter_start = dt_util.as_utc(local_start)
+        captured_at = self._quarter_start if scheduled_boundary else now_utc
+        self._forecast_snapshot = self._snapshot_for_slot(
+            self._quarter_start,
+            captured_at,
+        )
+        self._energy_ws = {roof: 0.0 for roof in ROOFS}
+        self._covered_seconds = {roof: 0.0 for roof in ROOFS}
+        self._last_sample_time = now_utc
+        self._sample_count = 0
+
+    def _snapshot_for_slot(
+        self,
+        slot_start: datetime,
+        captured_at: datetime,
+    ) -> dict[str, Any] | None:
+        """Freeze one forecast before any actual energy for that slot is known."""
+        point = next(
+            (
+                item
+                for item in self._source_points
+                if item.start == dt_util.as_utc(slot_start)
+            ),
+            None,
+        )
+        captured = dt_util.as_utc(captured_at)
+        if point is None or captured > dt_util.as_utc(slot_start):
+            return None
+        return {
+            "start": point.start.isoformat(),
+            "end": (point.start + timedelta(minutes=QUARTER_MINUTES)).isoformat(),
+            "north_kwh": point.north_kwh,
+            "south_kwh": point.south_kwh,
+            "total_kwh": point.total_kwh,
+            "provider": "open_meteo",
+            "model": "open_meteo_gti_physical_v0.1",
+            "source_update": (
+                self.last_successful_update.isoformat()
+                if self.last_successful_update
+                else None
+            ),
+            "captured_at": captured.isoformat(),
+        }
+
+    def _set_actual_sample(self, now_utc: datetime) -> None:
+        """Store the power values that apply from now onward."""
+        actual = self.actual_power
+        self._last_actual = {roof: actual[roof] for roof in ROOFS}
+        self._last_sample_time = now_utc
+        self._sample_count += 1
+
+    def _integrate_actual_until(self, now_utc: datetime) -> None:
+        """Integrate the previous sample with zero-order hold inside one slot."""
+        if self._quarter_start is None or self._last_sample_time is None:
+            self._last_sample_time = now_utc
+            return
+        quarter_end = self._quarter_start + timedelta(minutes=QUARTER_MINUTES)
+        interval_start = max(self._last_sample_time, self._quarter_start)
+        interval_end = min(now_utc, quarter_end)
+        seconds = max(0.0, (interval_end - interval_start).total_seconds())
+        if seconds > 0:
+            for roof in ROOFS:
+                power_w = self._last_actual.get(roof)
+                if power_w is None:
+                    continue
+                self._energy_ws[roof] += max(0.0, power_w) * seconds
+                self._covered_seconds[roof] += seconds
+        self._last_sample_time = interval_end
+
+    def _finalize_quarter(self, end_utc: datetime) -> None:
+        """Publish a completed record even when data quality is insufficient."""
+        if self._quarter_start is None:
+            return
+        expected_end = self._quarter_start + timedelta(minutes=QUARTER_MINUTES)
+        if end_utc < expected_end:
+            return
+        self.last_evaluation = build_quarter_evaluation(
+            self._quarter_start,
+            self._forecast_snapshot,
+            self._energy_ws,
+            self._covered_seconds,
+            self._sample_count,
+            SOLAR_MIN_VALID_COVERAGE,
+        )
+
+    def _storage_data(self) -> dict[str, Any]:
+        """Return compact JSON-safe evaluation state."""
+        active = None
+        if self._quarter_start is not None:
+            active = {
+                "start": self._quarter_start.isoformat(),
+                "forecast_snapshot": self._forecast_snapshot,
+                "energy_ws": dict(self._energy_ws),
+                "covered_seconds": dict(self._covered_seconds),
+                "sample_count": self._sample_count,
+            }
+        return {
+            "active_quarter": active,
+            "last_evaluation": self.last_evaluation,
+        }
 
     async def _async_hourly_refresh(self, _now: datetime) -> None:
         await self.async_refresh()
@@ -230,9 +451,9 @@ class DummyOSSolarCoordinator:
             "latitude": self.latitude,
             "longitude": self.longitude,
             "minutely_15": "global_tilted_irradiance",
-            # Two spare source stamps are required by backward-average alignment;
-            # one additional stamp covers refreshes after an exact quarter boundary.
-            "forecast_minutely_15": FORECAST_SLOTS + 3,
+            # Extra stamps cover backward-average alignment plus four rolling
+            # quarter advances until the next hourly refresh.
+            "forecast_minutely_15": FORECAST_SLOTS + SOLAR_REQUEST_EXTRA_SLOTS,
             "tilt": roof.tilt_deg,
             "azimuth": roof.open_meteo_azimuth_deg,
             "models": OPEN_METEO_SOLAR_MODEL,
@@ -244,8 +465,12 @@ class DummyOSSolarCoordinator:
             return await response.json()
 
     def _apply_payloads(self, north_payload: dict[str, Any], south_payload: dict[str, Any]) -> None:
-        north_values = self._normalize_irradiance(north_payload)
-        south_values = self._normalize_irradiance(south_payload)
+        local_now = dt_util.as_local(dt_util.utcnow())
+        cutoff_utc = dt_util.as_utc(
+            next_complete_slot(local_now, QUARTER_MINUTES)
+        )
+        north_values = self._normalize_irradiance(north_payload, cutoff_utc)
+        south_values = self._normalize_irradiance(south_payload, cutoff_utc)
         if set(north_values) != set(south_values):
             raise ValueError("North and south Open-Meteo timelines do not align")
 
@@ -259,16 +484,22 @@ class DummyOSSolarCoordinator:
             south_kwh = slot_energy_kwh(south_kw)
             points.append(SolarPoint(start, north_kwh, south_kwh, round(north_kwh + south_kwh, 6), north_kw, south_kw, round(north_kw + south_kw, 6), north_irradiance, south_irradiance))
 
-        if len(points) != FORECAST_SLOTS:
-            raise ValueError(f"Open-Meteo solar produced {len(points)} aligned slots; expected {FORECAST_SLOTS}")
-        self.points = points
+        if len(points) < FORECAST_SLOTS:
+            raise ValueError(
+                f"Open-Meteo solar produced {len(points)} aligned slots; "
+                f"expected at least {FORECAST_SLOTS}"
+            )
+        self._source_points = points
         self.source_generation_time_ms = {
             "north": self._as_float(north_payload.get("generationtime_ms")),
             "south": self._as_float(south_payload.get("generationtime_ms")),
         }
 
     @staticmethod
-    def _normalize_irradiance(payload: dict[str, Any]) -> dict[datetime, float]:
+    def _normalize_irradiance(
+        payload: dict[str, Any],
+        cutoff_utc: datetime,
+    ) -> dict[datetime, float]:
         minutely = payload.get("minutely_15")
         if not isinstance(minutely, dict):
             raise ValueError("Open-Meteo response missing minutely_15")
@@ -277,9 +508,6 @@ class DummyOSSolarCoordinator:
         if not isinstance(times, list) or not isinstance(values, list):
             raise ValueError("Open-Meteo response missing solar time axis or irradiance")
 
-        local_now = dt_util.as_local(dt_util.utcnow())
-        next_quarter = next_complete_slot(local_now, QUARTER_MINUTES)
-        cutoff_utc = dt_util.as_utc(next_quarter)
         timezone = ZoneInfo(OPEN_METEO_SOLAR_TIMEZONE)
         result: dict[datetime, float] = {}
         for index, raw_time in enumerate(times):
@@ -296,10 +524,15 @@ class DummyOSSolarCoordinator:
             if slot_start_utc < cutoff_utc:
                 continue
             try:
-                result[slot_start_utc] = max(0.0, float(values[index] or 0.0))
+                if values[index] is None:
+                    raise ValueError
+                irradiance = float(values[index])
+                if not math.isfinite(irradiance):
+                    raise ValueError
+                result[slot_start_utc] = max(0.0, irradiance)
             except (TypeError, ValueError):
                 raise ValueError(f"Invalid irradiance at {raw_time}") from None
-            if len(result) >= FORECAST_SLOTS:
+            if len(result) >= FORECAST_SLOTS + SOLAR_BUFFER_SLOTS:
                 break
         return result
 
@@ -318,20 +551,36 @@ class DummyOSSolarCoordinator:
             value = float(state.state)
         except ValueError:
             return None
+        if not math.isfinite(value):
+            return None
         unit = state.attributes.get("unit_of_measurement")
-        return value * 1000.0 if unit == "kW" else value
+        if unit == "kW":
+            return value * 1000.0
+        if unit == "W" or unit is None:
+            return value
+        _LOGGER.warning(
+            "Unsupported Solar power unit %s for %s; expected W or kW",
+            unit,
+            entity_id,
+        )
+        return None
 
     @property
-    def actual_power(self) -> dict[str, float | None]:
+    def actual_power(self) -> dict[str, Any]:
         total_entity, north_entity, south_entity = self.actual_entities
         total = self._state_number(total_entity)
         north_dc = self._state_number(north_entity)
         south_dc = self._state_number(south_entity)
+        total = max(0.0, total) if total is not None else None
         north, south = split_ac_power(total, north_dc, south_dc)
         return {"total": total, "north": north, "south": south, "method": "total_ac_x_dc_input_ratio"}
 
+    def energy_for_local_date(self, date, roof: str = "total") -> float:
+        field = {"north": "north_kwh", "south": "south_kwh", "total": "total_kwh"}[roof]
+        return round(sum(getattr(point, field) for point in self.points if dt_util.as_local(point.start).date() == date), 3)
+
     def next_quarter_point(self, now_utc: datetime | None = None) -> SolarPoint | None:
-        """Return the first forecast point strictly after the current boundary."""
+        """Return the first Solar slot strictly after the current quarter."""
         if not self.points:
             return None
         reference = dt_util.as_utc(now_utc or dt_util.utcnow())
@@ -341,10 +590,6 @@ class DummyOSSolarCoordinator:
             QUARTER_MINUTES,
         )
         return self.points[index] if index is not None else None
-
-    def energy_for_local_date(self, date, roof: str = "total") -> float:
-        field = {"north": "north_kwh", "south": "south_kwh", "total": "total_kwh"}[roof]
-        return round(sum(getattr(point, field) for point in self.points if dt_util.as_local(point.start).date() == date), 3)
 
     @property
     def age_minutes(self) -> float | None:
@@ -356,8 +601,12 @@ class DummyOSSolarCoordinator:
     def source_status(self) -> str:
         if self.last_successful_update is None:
             return "error" if self.last_error else "not_loaded"
-        if (self.age_minutes or 0) >= 180:
+        if (self.age_minutes or 0) >= 180 or not self.points:
             return "expired"
-        if self.last_error or (self.age_minutes or 0) >= 90:
+        if (
+            self.last_error
+            or (self.age_minutes or 0) >= 90
+            or len(self.points) < FORECAST_SLOTS
+        ):
             return "stale"
         return "ok"

@@ -69,6 +69,7 @@ _ENTITY_ID_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("sensor", "do_solar_actual_power_north", "sensor.do_solar_actual_power_north"),
     ("sensor", "do_solar_actual_power_south", "sensor.do_solar_actual_power_south"),
     ("sensor", "do_solar_actual_power_total", "sensor.do_solar_actual_power_total"),
+    ("sensor", "do_solar_evaluation_last_completed_quarter", "sensor.do_solar_evaluation_last_completed_quarter"),
     ("sensor", "do_solar_model", "sensor.do_solar_model"),
     ("select", "do_home_profile", "select.do_home_profile"),
 )

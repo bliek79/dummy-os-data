@@ -1,4 +1,4 @@
-# Entity specification - 0.1.0-alpha.11.2
+# Entity specification - 0.1.0-alpha.11.3
 
 | Entity | Meaning | Unit | Device class | State class | Update |
 |---|---|---|---|---|---|
@@ -35,21 +35,33 @@ The percentage accuracy formula will be defined before these entities are activa
 | `sensor.do_solar_forecast_tomorrow_north` | Forecast for local tomorrow, north | kWh | normal |
 | `sensor.do_solar_forecast_tomorrow_south` | Forecast for local tomorrow, south | kWh | normal |
 | `sensor.do_solar_forecast_tomorrow_total` | Forecast for local tomorrow, total | kWh | normal |
-| `sensor.do_solar_forecast_next_quarter` | Total forecast for the first strictly future quarter; advances locally every 15 minutes | kWh | normal |
+| `sensor.do_solar_forecast_next_quarter` | Total forecast for next complete quarter | kWh | normal |
 | `sensor.do_solar_actual_power_north` | North AC-equivalent actual power | W | normal |
 | `sensor.do_solar_actual_power_south` | South AC-equivalent actual power | W | normal |
 | `sensor.do_solar_actual_power_total` | Inverter total actual AC power | W | normal |
+| `sensor.do_solar_evaluation_last_completed_quarter` | Immutable forecast-versus-actual record for the last completed quarter | slot start | normal |
 | `sensor.do_solar_model` | Model, roof configuration and calculation metadata | text | normal |
 
-Solar remains observation/shadow in alpha.11.1. Package 86 and Solcast remain
-the reference until forecast snapshots, completed-day actuals and error metrics
-have been validated.
+The evaluation sensor uses its UTC slot start as state so every completed
+quarter produces one deterministic state change for automations. Its attributes
+are flat and Sheets-ready: forecast, actual, signed/absolute error, bias,
+accuracy and coverage for north, south and total. Invalid or partial quarters
+are still published with an explicit status; missing measurements are never
+silently converted to zero.
+
+Solar remains observation/shadow. Package 86 and Solcast remain the independent
+reference while native quarter history is collected; no calibration or planner
+control is performed.
 
 ### Solar entity-ID migration
 
-Alpha.11.1 migrates the 13 entity IDs observed on a clean alpha.11.0 install
+Alpha.11.1 migrated the 13 entity IDs observed on a clean alpha.11.0 install
 from `sensor.dummy_os_solar_*` to the fixed `sensor.do_solar_*` contract. The
 migration uses each exact observed source ID and the existing integration
 `unique_id`; it does not infer or guess a generated prefix. Home Assistant
 history and entity-registry settings therefore remain attached to the same
 entities.
+
+The new evaluation entity follows the same fixed-ID contract and has its own
+explicit generated-ID alias. A real Home Assistant registration check remains
+required before publishing the audited changes.

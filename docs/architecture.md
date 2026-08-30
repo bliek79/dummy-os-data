@@ -17,8 +17,19 @@
 Actual roof power is derived independently:
 
 `SMA total AC x SMA input A/(A+B)` for north and the complementary share for
-south. Forecast and actual data remain observation-only until daily evaluation
-and calibration have been proven against package 86 and Solcast.
+south.
+
+At every quarter boundary, the matching Solar forecast is frozen before actual
+production for that slot is known. Total AC and the two AC-equivalent roof
+shares are then integrated with zero-order hold. At the next boundary the
+completed actual kWh values are compared with the immutable snapshot. Each
+component requires at least 90% time coverage; unavailable data remains missing
+instead of becoming zero. Compact active and last-completed state survives an
+integration reload through Home Assistant storage.
+
+Forecast and actual data remain observation-only. The native quarter
+evaluation does not calibrate the model or influence the planner; package 86
+and Solcast remain independent benchmarks.
 
 ## Profile separation
 

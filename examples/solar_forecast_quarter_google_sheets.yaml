@@ -1,0 +1,43 @@
+alias: Sheets export - Dummy OS Solar Forecast Kwartier
+description: >-
+  Exporteert ieder nieuw afgerond Solar-evaluatiekwartier eenmaal naar Google
+  Sheets. De sensorattributen zijn vlak en bevatten ook status en brondekking.
+triggers:
+  - trigger: state
+    entity_id: sensor.do_solar_evaluation_last_completed_quarter
+    not_to:
+      - "unknown"
+      - "unavailable"
+
+conditions:
+  - condition: template
+    value_template: >-
+      {{
+        trigger.from_state is not none
+        and trigger.to_state is not none
+        and (
+          trigger.from_state.state not in ['unknown', 'unavailable']
+          or trigger.from_state.attributes.get('status')
+             == 'waiting_for_first_completed_quarter'
+        )
+        and trigger.from_state.state != trigger.to_state.state
+        and (
+          trigger.to_state.attributes.get('slot_id', '')
+          | string
+          | trim
+        ) != ''
+      }}
+
+actions:
+  - variables:
+      quarter: "{{ dict(trigger.to_state.attributes) }}"
+
+  - action: google_sheets.append_sheet
+    data:
+      config_entry: REPLACE_WITH_GOOGLE_SHEETS_CONFIG_ENTRY_ID
+      worksheet: "Solar Forecast Kwartier"
+      add_created_column: true
+      data: "{{ quarter }}"
+
+mode: queued
+max: 10
