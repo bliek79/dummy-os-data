@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 
 
@@ -39,6 +40,26 @@ def next_complete_slot(timestamp: datetime, resolution_minutes: int = 15) -> dat
     floor_minute = (timestamp.minute // resolution_minutes) * resolution_minutes
     floor = timestamp.replace(minute=floor_minute, second=0, microsecond=0)
     return floor if timestamp == floor else floor + timedelta(minutes=resolution_minutes)
+
+
+def next_future_slot(timestamp: datetime, resolution_minutes: int = 15) -> datetime:
+    """Return the first slot boundary strictly after the supplied timestamp."""
+    floor_minute = (timestamp.minute // resolution_minutes) * resolution_minutes
+    floor = timestamp.replace(minute=floor_minute, second=0, microsecond=0)
+    return floor + timedelta(minutes=resolution_minutes)
+
+
+def next_future_slot_index(
+    slot_starts: Sequence[datetime],
+    timestamp: datetime,
+    resolution_minutes: int = 15,
+) -> int | None:
+    """Return the first timeline index belonging to a future complete slot."""
+    target = next_future_slot(timestamp, resolution_minutes)
+    for index, slot_start in enumerate(slot_starts):
+        if slot_start >= target:
+            return index
+    return None
 
 
 def split_ac_power(

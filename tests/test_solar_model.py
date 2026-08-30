@@ -44,6 +44,26 @@ class SolarModelTests(unittest.TestCase):
         stamp = datetime(2026, 8, 29, 10, 15, tzinfo=timezone.utc)
         self.assertEqual(solar_model.next_complete_slot(stamp), stamp)
 
+    def test_next_future_slot_moves_past_exact_boundary(self) -> None:
+        stamp = datetime(2026, 8, 29, 10, 15, tzinfo=timezone.utc)
+        self.assertEqual(
+            solar_model.next_future_slot(stamp),
+            datetime(2026, 8, 29, 10, 30, tzinfo=timezone.utc),
+        )
+
+    def test_next_future_slot_index_skips_expired_timeline_points(self) -> None:
+        starts = [
+            datetime(2026, 8, 30, 5, minute, tzinfo=timezone.utc)
+            for minute in (15, 30, 45)
+        ] + [datetime(2026, 8, 30, 6, 0, tzinfo=timezone.utc)]
+        now = datetime(2026, 8, 30, 5, 36, tzinfo=timezone.utc)
+        self.assertEqual(solar_model.next_future_slot_index(starts, now), 2)
+
+    def test_next_future_slot_index_returns_none_after_timeline(self) -> None:
+        starts = [datetime(2026, 8, 30, 5, 45, tzinfo=timezone.utc)]
+        now = datetime(2026, 8, 30, 5, 46, tzinfo=timezone.utc)
+        self.assertIsNone(solar_model.next_future_slot_index(starts, now))
+
     def test_actual_split_preserves_total(self) -> None:
         north, south = solar_model.split_ac_power(3000, 2000, 1000)
         self.assertEqual(north, 2000.0)

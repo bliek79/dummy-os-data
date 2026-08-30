@@ -16,7 +16,7 @@ MIGRATION_SPEC.loader.exec_module(MIGRATION_MODULE)
 SOLAR_GENERATED_ENTITY_ID_ALIASES = MIGRATION_MODULE.SOLAR_GENERATED_ENTITY_ID_ALIASES
 is_known_generated_entity_id = MIGRATION_MODULE.is_known_generated_entity_id
 
-VERSION = "0.1.0-alpha.11.1"
+VERSION = "0.1.0-alpha.11.2"
 
 EXPECTED_SOLAR_ENTITY_ID_ALIASES = {
     "do_solar_status": "sensor.dummy_os_solar_source_status",
@@ -67,6 +67,14 @@ class ReleaseConsistencyTests(unittest.TestCase):
         for unique_id, observed_entity_id in EXPECTED_SOLAR_ENTITY_ID_ALIASES.items():
             self.assertTrue(is_known_generated_entity_id("sensor", unique_id, observed_entity_id))
             self.assertFalse(is_known_generated_entity_id("sensor", unique_id, f"sensor.user_{unique_id}"))
+
+    def test_solar_next_quarter_sensor_uses_dynamic_future_selection(self) -> None:
+        sensor_source = (ROOT / "custom_components/dummy_os_data/solar_sensor.py").read_text()
+        solar_source = (ROOT / "custom_components/dummy_os_data/solar.py").read_text()
+        self.assertIn("self.solar.next_quarter_point()", sensor_source)
+        self.assertNotIn("self.solar.points[0]", sensor_source)
+        self.assertIn("minute=[0, 15, 30, 45]", solar_source)
+        self.assertIn("next_future_slot_index", solar_source)
 
 
 if __name__ == "__main__":

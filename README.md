@@ -127,6 +127,10 @@ same ratio as SMA inputs A and B. The module is observation/shadow only. Solcast
 and package 86 remain active as benchmarks until daily history and forecast
 quality are validated.
 
+The next-quarter entity advances locally at every quarter boundary and selects
+the first strictly future slot from the retained timeline. This does not trigger
+an extra Open-Meteo request; source data continues to refresh hourly.
+
 Important Solar entities include:
 
 - `sensor.do_solar_status`

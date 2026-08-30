@@ -1,4 +1,4 @@
-# Entity specification - 0.1.0-alpha.11.1
+# Entity specification - 0.1.0-alpha.11.2
 
 | Entity | Meaning | Unit | Device class | State class | Update |
 |---|---|---|---|---|---|
@@ -35,7 +35,7 @@ The percentage accuracy formula will be defined before these entities are activa
 | `sensor.do_solar_forecast_tomorrow_north` | Forecast for local tomorrow, north | kWh | normal |
 | `sensor.do_solar_forecast_tomorrow_south` | Forecast for local tomorrow, south | kWh | normal |
 | `sensor.do_solar_forecast_tomorrow_total` | Forecast for local tomorrow, total | kWh | normal |
-| `sensor.do_solar_forecast_next_quarter` | Total forecast for next complete quarter | kWh | normal |
+| `sensor.do_solar_forecast_next_quarter` | Total forecast for the first strictly future quarter; advances locally every 15 minutes | kWh | normal |
 | `sensor.do_solar_actual_power_north` | North AC-equivalent actual power | W | normal |
 | `sensor.do_solar_actual_power_south` | South AC-equivalent actual power | W | normal |
 | `sensor.do_solar_actual_power_total` | Inverter total actual AC power | W | normal |
