@@ -162,12 +162,19 @@ class DummyOSSolarNextQuarterSensor(DummyOSSolarBaseSensor):
 
     @property
     def native_value(self) -> float | None:
-        return self.solar.points[0].total_kwh if self.solar.points else None
+        point = self.solar.next_quarter_point()
+        return point.total_kwh if point else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        point = self.solar.points[0] if self.solar.points else None
-        return {"start": point.start.isoformat() if point else None, "north_kwh": point.north_kwh if point else None, "south_kwh": point.south_kwh if point else None}
+        point = self.solar.next_quarter_point()
+        return {
+            "start": point.start.isoformat() if point else None,
+            "north_kwh": point.north_kwh if point else None,
+            "south_kwh": point.south_kwh if point else None,
+            "selection": "first_future_slot",
+            "refresh_schedule": "quarter-hourly at :00",
+        }
 
 
 class DummyOSSolarActualPowerSensor(DummyOSSolarBaseSensor):

@@ -1,69 +1,72 @@
 # GitHub Release
 
-**Tag:** `0.1.0-alpha.11.1`
+**Tag:** `0.1.0-alpha.11.2`
 
-**Release title:** `Dummy OS Data 0.1.0-alpha.11.1 - Solar Entity ID Migration Hotfix`
+**Release title:** `Dummy OS Data 0.1.0-alpha.11.2 - Solar Next-Quarter Rollover Hotfix`
 
-## Dummy OS Data 0.1.0-alpha.11.1
+## Dummy OS Data 0.1.0-alpha.11.2
 
-Hotfix voor de Solar-entiteitsregistratie uit alpha.11.0. De native Solar-laag
-werkte inhoudelijk, maar Home Assistant registreerde de 13 nieuwe entiteiten
-onder `sensor.dummy_os_solar_*` terwijl het vaste contract
-`sensor.do_solar_*` voorschrijft.
+Gerichte hotfix voor `sensor.do_solar_forecast_next_quarter`. De Solar-tijdlijn
+werd ieder uur correct vernieuwd, maar de sensor bleef tussen twee bronupdates
+altijd het eerste tijdlijnpunt tonen. Daardoor kon het gepubliceerde kwartier al
+voorbij zijn.
 
 ### Opgelost
 
-- De migratie gebruikt nu alle 13 werkelijk op alpha.11.0 waargenomen
-  Home Assistant-entity-ID's als expliciete bronmapping.
-- `sensor.dummy_os_solar_source_status` migreert naar
-  `sensor.do_solar_status`.
-- De forecast-, actual-power- en modelentiteiten migreren naar hun vaste
-  `sensor.do_solar_*`-ID.
-- De migratie blijft gekoppeld aan de bestaande `unique_id`; historie en
-  entity-registry-instellingen blijven daardoor behouden.
-- Er worden geen entiteiten verwijderd en er worden geen nieuwe functionele
-  Solar-entiteiten toegevoegd.
+- De next-quarter-sensor leest niet langer onvoorwaardelijk `points[0]`.
+- De sensor selecteert bij iedere uitlezing het eerste tijdlijnpunt dat strikt
+  na de actuele kwartiergrens begint.
+- Om `:00`, `:15`, `:30` en `:45` publiceert de Solar-coordinator de afgeleide
+  sensorstaten opnieuw.
+- Het doorschuiven gebruikt de al aanwezige 72-uurs tijdlijn en veroorzaakt geen
+  extra Open-Meteo-verzoek.
+- De attributen vermelden voortaan `selection: first_future_slot` en de lokale
+  kwartierverversing.
 
 ### Preventie
 
-- Nieuwe pure module `entity_migrations.py` bevat de 13 expliciete,
-  waargenomen bron-ID's.
-- Een releaseconsistentietest controleert dat alle 13 Solar-entiteiten zowel
-  in de vaste entiteitenlijst als in de expliciete migratiemapping voorkomen.
-- Een gegokt prefixpatroon wordt niet meer gebruikt voor deze Solar-migratie.
-- De formele release-aanleveringsstandaard v1.1 vereist voortaan een echte
-  Home Assistant-registratiecontrole bij nieuwe of gewijzigde entiteiten.
+- Nieuwe pure tijdhelpers scheiden een strikt toekomstig kwartier van de reeds
+  bestaande bronnormalisatie voor complete kwartieren.
+- Unit tests bewaken dat 05:36 UTC naar 05:45 UTC wijst, dat een exacte
+  kwartiergrens naar het volgende toekomstige kwartier doorschuift en dat een
+  uitgeputte tijdlijn veilig `None` oplevert.
+- Een releaseconsistentietest bewaakt dat de sensor de dynamische selectie
+  gebruikt en niet opnieuw rechtstreeks naar `points[0]` terugvalt.
 
 ### Ongewijzigd
 
-- Solar Forecast-provider, rekenmodel, 72-uurs tijdlijn en forecastwaarden uit
-  alpha.11.0 blijven ongewijzigd.
-- Open-Meteo-broninstellingen, dakconfiguraties en SMA-bronentiteiten blijven
+- Alle 13 vaste `sensor.do_solar_*`-entity-ID's en hun `unique_id` blijven
   ongewijzigd.
-- Package `86_solcast_evaluation` en Solcast blijven actief als benchmark.
-- Home Forecast, Weather, Prices, Degree Days en gas blijven ongewijzigd.
-- Geen forecastkalibratie, planner-invloed of fysieke EMS-sturing.
+- De alpha.11.1 entity-ID-migratie blijft ongewijzigd actief.
+- Open-Meteo blijft ieder uur om `:00:20` verversen met dezelfde retry/backoff.
+- 72-uurs horizon, 15-minutenresolutie, 288 punten en dakconfiguraties blijven
+  ongewijzigd.
+- Solar blijft `observation_shadow`; er is geen planner-invloed of fysieke
+  EMS-sturing toegevoegd.
+- Home Forecast, Weather, Prices, Degree Days, gas en package
+  `86_solcast_evaluation` blijven ongewijzigd.
 
 ### Validatie
 
-- Installeer alpha.11.1 over alpha.11.0 en herstart Home Assistant volledig.
-- Geen van de 13 `sensor.dummy_os_solar_*`-entiteiten mag daarna nog als actieve
-  Dummy OS Data-entiteit bestaan.
-- De 13 vaste `sensor.do_solar_*`-entiteiten moeten bestaan zonder duplicaten.
-- `sensor.do_solar_status` moet bij geldige brondata `ok` tonen.
-- `sensor.do_solar_forecast_timeline` moet state `288` tonen.
-- `sensor.do_solar_forecast_tomorrow_total` moet binnen 0,001 kWh gelijk zijn
-  aan Noord plus Zuid.
-- Controleer na een tweede volledige Home Assistant-herstart dat dezelfde
-  entity-ID's behouden blijven.
-- Controleer dat bestaande historie en instellingen aan de gemigreerde
-  entiteiten gekoppeld zijn gebleven.
-- Er mogen geen nieuwe `dummy_os_data` setup-, registry- of runtimefouten in de
-  logboeken staan.
+- Installeer alpha.11.2 en herstart Home Assistant volledig.
+- Controleer dat Dummy OS Data versie `0.1.0-alpha.11.2` toont.
+- Controleer op een willekeurig moment tussen twee kwartiergrenzen dat attribuut
+  `start` van `sensor.do_solar_forecast_next_quarter` naar de eerstvolgende
+  kwartiergrens wijst.
+- Controleer na de volgende kwartiergrens dat `start` automatisch nog eens
+  vijftien minuten doorschuift, zonder een herstart of handmatige bronrefresh.
+- Controleer dat `selection` gelijk is aan `first_future_slot`.
+- Controleer dat `sensor.do_solar_forecast_timeline` state `288` blijft tonen.
+- Controleer dat Noord plus Zuid van het gekozen kwartier gelijk is aan de
+  totaalstaat van de next-quarter-sensor.
+- Controleer dat `last_attempt` van `sensor.do_solar_status` niet ieder kwartier
+  verandert; Open-Meteo moet alleen op het bestaande uurschema worden bevraagd.
+- Geen nieuwe `dummy_os_data` setup-, registry- of runtimefouten mogen in de
+  Home Assistant-logboeken verschijnen.
 
 ### Installatiepakket
 
-- Bestand: `Dummy_OS_Data_0.1.0-alpha.11.1_HA_install.zip`
-- SHA-256: `3b802983fcec532074922d676def3f6b001c65bca0dc4ea390adbca16fdd7c1c`
+- Bestand: `Dummy_OS_Data_0.1.0-alpha.11.2_HA_install.zip`
+- SHA-256: `7a3aa121c5cf7b58fea6a0205c9f75eb09112998e13a1411d359d47f83962a3e`
 - De ZIP bevat `custom_components/dummy_os_data` en kan over de bestaande
   custom integration worden uitgepakt.

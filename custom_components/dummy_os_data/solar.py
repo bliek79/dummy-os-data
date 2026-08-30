@@ -41,6 +41,7 @@ from .const import (
 from .solar_model import (
     backward_average_slot_start,
     next_complete_slot,
+    next_future_slot_index,
     pv_power_kw,
     slot_energy_kwh,
     split_ac_power,
@@ -156,9 +157,17 @@ class DummyOSSolarCoordinator:
         )
 
     async def async_setup(self) -> None:
-        """Fetch immediately, hourly and republish actual-power changes."""
+        """Fetch immediately/hourly and republish live and quarter changes."""
         await self.async_refresh()
         self._unsubs.append(async_track_time_change(self.hass, self._async_hourly_refresh, minute=0, second=20))
+        self._unsubs.append(
+            async_track_time_change(
+                self.hass,
+                self._quarter_boundary,
+                minute=[0, 15, 30, 45],
+                second=0,
+            )
+        )
         self._unsubs.append(async_track_state_change_event(self.hass, list(self.actual_entities), self._actual_changed))
 
     async def async_shutdown(self) -> None:
@@ -183,6 +192,11 @@ class DummyOSSolarCoordinator:
 
     @callback
     def _actual_changed(self, _event: Event) -> None:
+        self._notify()
+
+    @callback
+    def _quarter_boundary(self, _now: datetime) -> None:
+        """Advance derived quarter entities without refetching Open-Meteo."""
         self._notify()
 
     async def _async_hourly_refresh(self, _now: datetime) -> None:
@@ -315,6 +329,18 @@ class DummyOSSolarCoordinator:
         south_dc = self._state_number(south_entity)
         north, south = split_ac_power(total, north_dc, south_dc)
         return {"total": total, "north": north, "south": south, "method": "total_ac_x_dc_input_ratio"}
+
+    def next_quarter_point(self, now_utc: datetime | None = None) -> SolarPoint | None:
+        """Return the first forecast point strictly after the current boundary."""
+        if not self.points:
+            return None
+        reference = dt_util.as_utc(now_utc or dt_util.utcnow())
+        index = next_future_slot_index(
+            [point.start for point in self.points],
+            reference,
+            QUARTER_MINUTES,
+        )
+        return self.points[index] if index is not None else None
 
     def energy_for_local_date(self, date, roof: str = "total") -> float:
         field = {"north": "north_kwh", "south": "south_kwh", "total": "total_kwh"}[roof]
