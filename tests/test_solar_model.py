@@ -18,6 +18,8 @@ class SolarModelTests(unittest.TestCase):
     def test_zero_and_negative_irradiance(self) -> None:
         self.assertEqual(solar_model.pv_power_kw(0, 2.96, 2.45, 0.9), 0.0)
         self.assertEqual(solar_model.pv_power_kw(-20, 2.96, 2.45, 0.9), 0.0)
+        self.assertEqual(solar_model.pv_power_kw(float("nan"), 2.96, 2.45, 0.9), 0.0)
+        self.assertEqual(solar_model.pv_power_kw(float("inf"), 2.96, 2.45, 0.9), 0.0)
 
     def test_power_formula_and_ac_cap(self) -> None:
         self.assertEqual(solar_model.pv_power_kw(500, 2.96, 2.45, 0.9), 1.332)
@@ -44,25 +46,26 @@ class SolarModelTests(unittest.TestCase):
         stamp = datetime(2026, 8, 29, 10, 15, tzinfo=timezone.utc)
         self.assertEqual(solar_model.next_complete_slot(stamp), stamp)
 
-    def test_next_future_slot_moves_past_exact_boundary(self) -> None:
+    def test_next_future_slot_is_strictly_after_exact_boundary(self) -> None:
         stamp = datetime(2026, 8, 29, 10, 15, tzinfo=timezone.utc)
         self.assertEqual(
             solar_model.next_future_slot(stamp),
             datetime(2026, 8, 29, 10, 30, tzinfo=timezone.utc),
         )
 
-    def test_next_future_slot_index_skips_expired_timeline_points(self) -> None:
+    def test_next_future_slot_index_skips_expired_points(self) -> None:
         starts = [
-            datetime(2026, 8, 30, 5, minute, tzinfo=timezone.utc)
-            for minute in (15, 30, 45)
-        ] + [datetime(2026, 8, 30, 6, 0, tzinfo=timezone.utc)]
-        now = datetime(2026, 8, 30, 5, 36, tzinfo=timezone.utc)
-        self.assertEqual(solar_model.next_future_slot_index(starts, now), 2)
+            datetime(2026, 8, 29, 10, 0, tzinfo=timezone.utc),
+            datetime(2026, 8, 29, 10, 15, tzinfo=timezone.utc),
+            datetime(2026, 8, 29, 10, 30, tzinfo=timezone.utc),
+        ]
+        stamp = datetime(2026, 8, 29, 10, 16, tzinfo=timezone.utc)
+        self.assertEqual(solar_model.next_future_slot_index(starts, stamp), 2)
 
-    def test_next_future_slot_index_returns_none_after_timeline(self) -> None:
-        starts = [datetime(2026, 8, 30, 5, 45, tzinfo=timezone.utc)]
-        now = datetime(2026, 8, 30, 5, 46, tzinfo=timezone.utc)
-        self.assertIsNone(solar_model.next_future_slot_index(starts, now))
+    def test_next_future_slot_index_is_none_after_timeline(self) -> None:
+        starts = [datetime(2026, 8, 29, 10, 0, tzinfo=timezone.utc)]
+        stamp = datetime(2026, 8, 29, 10, 0, tzinfo=timezone.utc)
+        self.assertIsNone(solar_model.next_future_slot_index(starts, stamp))
 
     def test_actual_split_preserves_total(self) -> None:
         north, south = solar_model.split_ac_power(3000, 2000, 1000)
@@ -71,7 +74,11 @@ class SolarModelTests(unittest.TestCase):
 
     def test_actual_split_requires_ratio_when_generating(self) -> None:
         self.assertEqual(solar_model.split_ac_power(1000, 0, 0), (None, None))
+
+    def test_zero_actual_does_not_require_awake_dc_inputs(self) -> None:
+        self.assertEqual(solar_model.split_ac_power(0, None, None), (0.0, 0.0))
         self.assertEqual(solar_model.split_ac_power(0, 0, 0), (0.0, 0.0))
+        self.assertEqual(solar_model.split_ac_power(float("nan"), 1, 1), (None, None))
 
 
 if __name__ == "__main__":

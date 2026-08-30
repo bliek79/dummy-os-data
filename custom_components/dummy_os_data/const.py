@@ -4,7 +4,7 @@ from __future__ import annotations
 
 DOMAIN = "dummy_os_data"
 NAME = "Dummy OS"
-VERSION = "0.1.0-alpha.11.2"
+VERSION = "0.1.0-alpha.11.3"
 
 CONF_HOME_POWER_ENTITY = "home_power_entity"
 DEFAULT_HOME_POWER_ENTITY = "sensor.home_power"
@@ -53,6 +53,8 @@ PLATFORMS = ["sensor", "select"]
 
 STORAGE_VERSION = 1
 STORAGE_KEY = f"{DOMAIN}.home_forecast"
+SOLAR_STORAGE_VERSION = 1
+SOLAR_STORAGE_KEY = f"{DOMAIN}.solar_evaluation"
 
 PROFILE_NORMAL = "normal"
 PROFILE_AWAY = "away"
@@ -65,3 +67,4 @@ FORECAST_HORIZON_HOURS = 72
 FORECAST_SLOTS = FORECAST_HORIZON_HOURS * 60 // QUARTER_MINUTES
 MAX_HISTORY_DAYS = 400
 MIN_VALID_COVERAGE = 0.90
+SOLAR_MIN_VALID_COVERAGE = 0.90

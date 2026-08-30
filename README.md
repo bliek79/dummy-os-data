@@ -123,13 +123,12 @@ Default installation parameters:
 - actual south DC input: `sensor.sb3_6_1av_41_857_pv_power_b`.
 
 The north/south actual AC-equivalent split uses total inverter AC power in the
-same ratio as SMA inputs A and B. The module is observation/shadow only. Solcast
-and package 86 remain active as benchmarks until daily history and forecast
-quality are validated.
-
-The next-quarter entity advances locally at every quarter boundary and selects
-the first strictly future slot from the retained timeline. This does not trigger
-an extra Open-Meteo request; source data continues to refresh hourly.
+same ratio as SMA inputs A and B. For each full quarter, Dummy OS freezes the
+forecast before actual production is known and integrates the SMA power with a
+zero-order hold. A component is valid only with at least 90% time coverage;
+missing source data is not treated as zero. The module remains
+observation/shadow only. Solcast and package 86 remain active as independent
+benchmarks while quarter history accumulates.
 
 Important Solar entities include:
 
@@ -145,6 +144,7 @@ Important Solar entities include:
 - `sensor.do_solar_actual_power_north`
 - `sensor.do_solar_actual_power_south`
 - `sensor.do_solar_actual_power_total`
+- `sensor.do_solar_evaluation_last_completed_quarter`
 - `sensor.do_solar_model`
 
 ### Prices Shadow Layer
@@ -269,7 +269,7 @@ Planned development areas include:
 
 - Prices validation dashboard and Google Sheets evaluation;
 - immutable price/tariff history and actual import/export cost records;
-- Solar forecast evaluation, calibration and Solcast benchmark history;
+- Solar daily aggregation, calibration and Solcast benchmark history;
 - heat-demand and gas forecast models;
 - gas/TTF forecast evaluation;
 - broader forecast-quality diagnostics;

@@ -1,72 +1,79 @@
 # GitHub Release
 
-**Tag:** `0.1.0-alpha.11.2`
+**Tag:** `0.1.0-alpha.11.3`
 
-**Release title:** `Dummy OS Data 0.1.0-alpha.11.2 - Solar Next-Quarter Rollover Hotfix`
+**Release title:** `Dummy OS Data 0.1.0-alpha.11.3 - Solar Evaluation & Reliability`
 
-## Dummy OS Data 0.1.0-alpha.11.2
+## Dummy OS Data 0.1.0-alpha.11.3
 
-Gerichte hotfix voor `sensor.do_solar_forecast_next_quarter`. De Solar-tijdlijn
-werd ieder uur correct vernieuwd, maar de sensor bleef tussen twee bronupdates
-altijd het eerste tijdlijnpunt tonen. Daardoor kon het gepubliceerde kwartier al
-voorbij zijn.
+Uitbreiding en technische controle van de native Solar Forecast-laag uit
+alpha.11.2. Deze release voegt een echte kwartierevaluatie toe, maakt de
+72-uurs tijdlijn robuuster en corrigeert randgevallen rond kwartiergrenzen,
+bronwaarden en nachtproductie. De module blijft uitsluitend
+observation/shadow; Solcast en package 86 blijven actief als onafhankelijke
+referentie.
 
-### Opgelost
+### Nieuw
 
-- De next-quarter-sensor leest niet langer onvoorwaardelijk `points[0]`.
-- De sensor selecteert bij iedere uitlezing het eerste tijdlijnpunt dat strikt
-  na de actuele kwartiergrens begint.
-- Om `:00`, `:15`, `:30` en `:45` publiceert de Solar-coordinator de afgeleide
-  sensorstaten opnieuw.
-- Het doorschuiven gebruikt de al aanwezige 72-uurs tijdlijn en veroorzaakt geen
-  extra Open-Meteo-verzoek.
-- De attributen vermelden voortaan `selection: first_future_slot` en de lokale
-  kwartierverversing.
+- Nieuwe entiteit
+  `sensor.do_solar_evaluation_last_completed_quarter`.
+- Per afgerond kwartier één onveranderlijk, vlak en Google Sheets-geschikt
+  evaluatierecord.
+- Forecastsnapshot wordt op de kwartiergrens vastgelegd voordat werkelijke
+  productie voor dat kwartier bekend is.
+- Werkelijke kwartierenergie voor Noord, Zuid en totaal via zero-order-hold
+  integratie van het SMA AC-vermogen.
+- Noord/Zuid-verdeling blijft gebaseerd op de verhouding tussen SMA
+  DC-ingangen A en B.
+- Forecast, werkelijk, signed error, absolute error, bias, accuracy en
+  meetdekking per dakvlak en totaal.
+- Minimaal 90% geldige tijddekking per component; ontbrekende waarden worden
+  niet als nul verwerkt.
+- Persistente opslag van het actieve kwartier en het laatst afgeronde
+  evaluatierecord.
+- Google Sheets-voorbeeldautomatisering voor ieder nieuw afgerond kwartier.
+- Regressietest die Solar-entiteiten uit voorbeeld-YAML controleert tegen de
+  werkelijk geregistreerde Solar-sensoren.
 
-### Preventie
+### Opgelost en verbeterd
 
-- Nieuwe pure tijdhelpers scheiden een strikt toekomstig kwartier van de reeds
-  bestaande bronnormalisatie voor complete kwartieren.
-- Unit tests bewaken dat 05:36 UTC naar 05:45 UTC wijst, dat een exacte
-  kwartiergrens naar het volgende toekomstige kwartier doorschuift en dat een
-  uitgeputte tijdlijn veilig `None` oplevert.
-- Een releaseconsistentietest bewaakt dat de sensor de dynamische selectie
-  gebruikt en niet opnieuw rechtstreeks naar `points[0]` terugvalt.
-
-### Ongewijzigd
-
-- Alle 13 vaste `sensor.do_solar_*`-entity-ID's en hun `unique_id` blijven
-  ongewijzigd.
-- De alpha.11.1 entity-ID-migratie blijft ongewijzigd actief.
-- Open-Meteo blijft ieder uur om `:00:20` verversen met dezelfde retry/backoff.
-- 72-uurs horizon, 15-minutenresolutie, 288 punten en dakconfiguraties blijven
-  ongewijzigd.
-- Solar blijft `observation_shadow`; er is geen planner-invloed of fysieke
-  EMS-sturing toegevoegd.
-- Home Forecast, Weather, Prices, Degree Days, gas en package
-  `86_solcast_evaluation` blijven ongewijzigd.
+- Open-Meteo Solar-tijdstempels worden intern in UTC verwerkt.
+- Noord en Zuid gebruiken exact dezelfde tijdsgrens bij normalisatie.
+- De 72-uurs tijdlijn houdt vier extra bronpunten vast en blijft tussen de
+  uurlijkse updates 288 toekomstige kwartierslots leveren.
+- Ongeldige, ontbrekende en niet-eindige stralingswaarden worden afgekeurd in
+  plaats van stilzwijgend naar nul omgezet.
+- Alleen werkelijke vermogensbronnen in `W` of `kW` worden geaccepteerd.
+- Een geplande kwartiercallback gebruikt de exacte logische kwartiergrens,
+  zodat event-loopvertraging geen geldige forecastsnapshot afkeurt.
+- Bij `0 W` totaalvermogen zijn Noord en Zuid eveneens `0 W`, ook wanneer de
+  DC-ingangssensoren 's nachts slapen of tijdelijk geen waarde leveren.
+- Solar-opties valideren nu coördinaten, dakhelling, Open-Meteo-azimut,
+  capaciteiten, AC-limieten en prestatiefactoren.
+- `forecast_end` is expliciet het exclusieve einde van het laatste tijdslot;
+  `last_slot_start` is afzonderlijk beschikbaar.
+- Bronstatus bevat aanvullende buffer-, actual- en evaluatiediagnostiek.
 
 ### Validatie
 
-- Installeer alpha.11.2 en herstart Home Assistant volledig.
-- Controleer dat Dummy OS Data versie `0.1.0-alpha.11.2` toont.
-- Controleer op een willekeurig moment tussen twee kwartiergrenzen dat attribuut
-  `start` van `sensor.do_solar_forecast_next_quarter` naar de eerstvolgende
-  kwartiergrens wijst.
-- Controleer na de volgende kwartiergrens dat `start` automatisch nog eens
-  vijftien minuten doorschuift, zonder een herstart of handmatige bronrefresh.
-- Controleer dat `selection` gelijk is aan `first_future_slot`.
-- Controleer dat `sensor.do_solar_forecast_timeline` state `288` blijft tonen.
-- Controleer dat Noord plus Zuid van het gekozen kwartier gelijk is aan de
-  totaalstaat van de next-quarter-sensor.
-- Controleer dat `last_attempt` van `sensor.do_solar_status` niet ieder kwartier
-  verandert; Open-Meteo moet alleen op het bestaande uurschema worden bevraagd.
-- Geen nieuwe `dummy_os_data` setup-, registry- of runtimefouten mogen in de
-  Home Assistant-logboeken verschijnen.
+- 21 unit- en releaseconsistentietests slagen.
+- Python-bronnen compileren en zijn met AST gevalideerd.
+- Manifest, vertalingen en JSON-bestanden zijn consistent.
+- De generieke en installatiegebonden Google Sheets-automatisering zijn als
+  YAML gevalideerd.
+- `sensor.do_solar_forecast_timeline` blijft exact 288 punten publiceren.
+- Het `points`-attribuut blijft Recorder-excluded.
+- Noord plus Zuid blijft binnen afronding gelijk aan totaal.
+- De vaste `sensor.do_solar_*`-entity-ID's blijven behouden.
 
-### Installatiepakket
+### Ongewijzigd
 
-- Bestand: `Dummy_OS_Data_0.1.0-alpha.11.2_HA_install.zip`
-- SHA-256: `7a3aa121c5cf7b58fea6a0205c9f75eb09112998e13a1411d359d47f83962a3e`
-- De ZIP bevat `custom_components/dummy_os_data` en kan over de bestaande
-  custom integration worden uitgepakt.
+- Het fysieke forecastmodel blijft
+  `open_meteo_gti_physical_v0.1`.
+- Standaard dakcapaciteiten, AC-limieten, hellingen, azimuts en
+  prestatiefactoren blijven ongewijzigd.
+- Package `86_solcast_evaluation` en Solcast blijven actief als benchmark.
+- Package 07 en de zonneboilerlogica blijven ongewijzigd.
+- Home Forecast, Weather, Prices, Degree Days en gas blijven ongewijzigd.
+- Geen automatische forecastkalibratie, bronselectie, EMS-sturing of
+  planner-invloed.

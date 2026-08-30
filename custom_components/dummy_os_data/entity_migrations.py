@@ -19,6 +19,7 @@ SOLAR_GENERATED_ENTITY_ID_ALIASES: dict[str, str] = {
     "do_solar_actual_power_north": "sensor.dummy_os_solar_actual_power_north",
     "do_solar_actual_power_south": "sensor.dummy_os_solar_actual_power_south",
     "do_solar_actual_power_total": "sensor.dummy_os_solar_actual_power_total",
+    "do_solar_evaluation_last_completed_quarter": "sensor.dummy_os_solar_evaluation_last_completed_quarter",
     "do_solar_model": "sensor.dummy_os_solar_forecast_model",
 }
 

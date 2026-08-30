@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import importlib.util
 from pathlib import Path
+import re
 import unittest
 
 ROOT = Path(__file__).parents[1]
@@ -16,7 +17,7 @@ MIGRATION_SPEC.loader.exec_module(MIGRATION_MODULE)
 SOLAR_GENERATED_ENTITY_ID_ALIASES = MIGRATION_MODULE.SOLAR_GENERATED_ENTITY_ID_ALIASES
 is_known_generated_entity_id = MIGRATION_MODULE.is_known_generated_entity_id
 
-VERSION = "0.1.0-alpha.11.2"
+VERSION = "0.1.0-alpha.11.3"
 
 EXPECTED_SOLAR_ENTITY_ID_ALIASES = {
     "do_solar_status": "sensor.dummy_os_solar_source_status",
@@ -31,6 +32,7 @@ EXPECTED_SOLAR_ENTITY_ID_ALIASES = {
     "do_solar_actual_power_north": "sensor.dummy_os_solar_actual_power_north",
     "do_solar_actual_power_south": "sensor.dummy_os_solar_actual_power_south",
     "do_solar_actual_power_total": "sensor.dummy_os_solar_actual_power_total",
+    "do_solar_evaluation_last_completed_quarter": "sensor.dummy_os_solar_evaluation_last_completed_quarter",
     "do_solar_model": "sensor.dummy_os_solar_forecast_model",
 }
 
@@ -55,7 +57,7 @@ class ReleaseConsistencyTests(unittest.TestCase):
 
     def test_all_observed_solar_entity_ids_have_exact_migration_aliases(self) -> None:
         self.assertEqual(EXPECTED_SOLAR_ENTITY_ID_ALIASES, SOLAR_GENERATED_ENTITY_ID_ALIASES)
-        self.assertEqual(13, len(SOLAR_GENERATED_ENTITY_ID_ALIASES))
+        self.assertEqual(14, len(SOLAR_GENERATED_ENTITY_ID_ALIASES))
 
         init_source = (ROOT / "custom_components/dummy_os_data/__init__.py").read_text()
         for unique_id in EXPECTED_SOLAR_ENTITY_ID_ALIASES:
@@ -68,13 +70,30 @@ class ReleaseConsistencyTests(unittest.TestCase):
             self.assertTrue(is_known_generated_entity_id("sensor", unique_id, observed_entity_id))
             self.assertFalse(is_known_generated_entity_id("sensor", unique_id, f"sensor.user_{unique_id}"))
 
-    def test_solar_next_quarter_sensor_uses_dynamic_future_selection(self) -> None:
-        sensor_source = (ROOT / "custom_components/dummy_os_data/solar_sensor.py").read_text()
-        solar_source = (ROOT / "custom_components/dummy_os_data/solar.py").read_text()
-        self.assertIn("self.solar.next_quarter_point()", sensor_source)
-        self.assertNotIn("self.solar.points[0]", sensor_source)
-        self.assertIn("minute=[0, 15, 30, 45]", solar_source)
-        self.assertIn("next_future_slot_index", solar_source)
+    def test_solar_examples_reference_only_registered_entities(self) -> None:
+        """Prevent another automation from naming a sensor that is not built."""
+        sensor_source = (
+            ROOT / "custom_components/dummy_os_data/solar_sensor.py"
+        ).read_text()
+        registered_unique_ids = set(
+            re.findall(r'_attr_unique_id = "(do_solar_[^"]+)"', sensor_source)
+        )
+        registered_unique_ids.update(
+            re.findall(r'object_id = f"(do_solar_[^"]+)', sensor_source)
+        )
+
+        for example in (ROOT / "examples").glob("*.yaml"):
+            for entity_id in re.findall(r"sensor\.(do_solar_[a-z0-9_]+)", example.read_text()):
+                self.assertIn(
+                    entity_id,
+                    registered_unique_ids,
+                    f"{example.name} references unregistered sensor.{entity_id}",
+                )
+
+        self.assertIn(
+            "do_solar_evaluation_last_completed_quarter",
+            registered_unique_ids,
+        )
 
 
 if __name__ == "__main__":

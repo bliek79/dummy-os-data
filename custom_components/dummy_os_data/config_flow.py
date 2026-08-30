@@ -134,18 +134,18 @@ class DummyOSDataOptionsFlow(config_entries.OptionsFlow):
                 vol.Required(CONF_SOLAR_ACTUAL_SOUTH_DC_ENTITY, default=self._current(CONF_SOLAR_ACTUAL_SOUTH_DC_ENTITY, DEFAULT_SOLAR_ACTUAL_SOUTH_DC_ENTITY)): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor")
                 ),
-                vol.Required(CONF_SOLAR_LATITUDE, default=self._current(CONF_SOLAR_LATITUDE, 51.828981)): vol.Coerce(float),
-                vol.Required(CONF_SOLAR_LONGITUDE, default=self._current(CONF_SOLAR_LONGITUDE, 4.839871)): vol.Coerce(float),
-                vol.Required(CONF_SOLAR_NORTH_DC_KWP, default=self._current(CONF_SOLAR_NORTH_DC_KWP, 2.96)): vol.Coerce(float),
-                vol.Required(CONF_SOLAR_NORTH_AC_KW, default=self._current(CONF_SOLAR_NORTH_AC_KW, 2.45)): vol.Coerce(float),
-                vol.Required(CONF_SOLAR_NORTH_TILT, default=self._current(CONF_SOLAR_NORTH_TILT, 37.0)): vol.Coerce(float),
-                vol.Required(CONF_SOLAR_NORTH_AZIMUTH, default=self._current(CONF_SOLAR_NORTH_AZIMUTH, 180.0)): vol.Coerce(float),
-                vol.Required(CONF_SOLAR_NORTH_FACTOR, default=self._current(CONF_SOLAR_NORTH_FACTOR, 0.9)): vol.Coerce(float),
-                vol.Required(CONF_SOLAR_SOUTH_DC_KWP, default=self._current(CONF_SOLAR_SOUTH_DC_KWP, 1.48)): vol.Coerce(float),
-                vol.Required(CONF_SOLAR_SOUTH_AC_KW, default=self._current(CONF_SOLAR_SOUTH_AC_KW, 1.23)): vol.Coerce(float),
-                vol.Required(CONF_SOLAR_SOUTH_TILT, default=self._current(CONF_SOLAR_SOUTH_TILT, 37.0)): vol.Coerce(float),
-                vol.Required(CONF_SOLAR_SOUTH_AZIMUTH, default=self._current(CONF_SOLAR_SOUTH_AZIMUTH, 0.0)): vol.Coerce(float),
-                vol.Required(CONF_SOLAR_SOUTH_FACTOR, default=self._current(CONF_SOLAR_SOUTH_FACTOR, 0.9)): vol.Coerce(float),
+                vol.Required(CONF_SOLAR_LATITUDE, default=self._current(CONF_SOLAR_LATITUDE, 51.828981)): vol.All(vol.Coerce(float), vol.Range(min=-90, max=90)),
+                vol.Required(CONF_SOLAR_LONGITUDE, default=self._current(CONF_SOLAR_LONGITUDE, 4.839871)): vol.All(vol.Coerce(float), vol.Range(min=-180, max=180)),
+                vol.Required(CONF_SOLAR_NORTH_DC_KWP, default=self._current(CONF_SOLAR_NORTH_DC_KWP, 2.96)): vol.All(vol.Coerce(float), vol.Range(min=0)),
+                vol.Required(CONF_SOLAR_NORTH_AC_KW, default=self._current(CONF_SOLAR_NORTH_AC_KW, 2.45)): vol.All(vol.Coerce(float), vol.Range(min=0)),
+                vol.Required(CONF_SOLAR_NORTH_TILT, default=self._current(CONF_SOLAR_NORTH_TILT, 37.0)): vol.All(vol.Coerce(float), vol.Range(min=0, max=90)),
+                vol.Required(CONF_SOLAR_NORTH_AZIMUTH, default=self._current(CONF_SOLAR_NORTH_AZIMUTH, 180.0)): vol.All(vol.Coerce(float), vol.Range(min=-180, max=180)),
+                vol.Required(CONF_SOLAR_NORTH_FACTOR, default=self._current(CONF_SOLAR_NORTH_FACTOR, 0.9)): vol.All(vol.Coerce(float), vol.Range(min=0)),
+                vol.Required(CONF_SOLAR_SOUTH_DC_KWP, default=self._current(CONF_SOLAR_SOUTH_DC_KWP, 1.48)): vol.All(vol.Coerce(float), vol.Range(min=0)),
+                vol.Required(CONF_SOLAR_SOUTH_AC_KW, default=self._current(CONF_SOLAR_SOUTH_AC_KW, 1.23)): vol.All(vol.Coerce(float), vol.Range(min=0)),
+                vol.Required(CONF_SOLAR_SOUTH_TILT, default=self._current(CONF_SOLAR_SOUTH_TILT, 37.0)): vol.All(vol.Coerce(float), vol.Range(min=0, max=90)),
+                vol.Required(CONF_SOLAR_SOUTH_AZIMUTH, default=self._current(CONF_SOLAR_SOUTH_AZIMUTH, 0.0)): vol.All(vol.Coerce(float), vol.Range(min=-180, max=180)),
+                vol.Required(CONF_SOLAR_SOUTH_FACTOR, default=self._current(CONF_SOLAR_SOUTH_FACTOR, 0.9)): vol.All(vol.Coerce(float), vol.Range(min=0)),
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema)
