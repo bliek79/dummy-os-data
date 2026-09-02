@@ -112,6 +112,7 @@ class ReleaseConsistencyTests(unittest.TestCase):
     def test_home_power_formula_and_source_contract_are_fixed(self) -> None:
         sensor_source = (ROOT / "custom_components/dummy_os_data/home_input_sensor.py").read_text()
         config_flow = (ROOT / "custom_components/dummy_os_data/config_flow.py").read_text()
+        const_source = (ROOT / "custom_components/dummy_os_data/const.py").read_text()
         expected_keys = (
             "grid_import_power_entity",
             "grid_export_power_entity",
@@ -120,12 +121,13 @@ class ReleaseConsistencyTests(unittest.TestCase):
             "battery_discharge_power_entity",
         )
         for key in expected_keys:
-            self.assertIn(key, config_flow)
+            self.assertIn(key, const_source)
+        self.assertIn("DATA_POWER_SOURCE_KEYS", config_flow)
         self.assertIn(
             "solar + grid_import + battery_discharge - grid_export - battery_charge",
             sensor_source,
         )
-        self.assertNotIn("home_power_positive_direction", config_flow)
+        self.assertNotIn("CONF_HOME_POWER_POSITIVE_DIRECTION", config_flow)
 
     def test_solar_examples_reference_only_registered_entities(self) -> None:
         """Prevent another automation from naming a sensor that is not built."""
