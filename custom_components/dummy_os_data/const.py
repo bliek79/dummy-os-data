@@ -19,18 +19,21 @@ HOME_POWER_POSITIVE_DIRECTION_OPTIONS = [
 ]
 
 # Canonical Dummy OS Data energy-flow inputs.
-CONF_GRID_IMPORT_POWER_ENTITY = "grid_import_power_entity"
-CONF_GRID_EXPORT_POWER_ENTITY = "grid_export_power_entity"
+# Grid power is one bidirectional source: positive = import, negative = export.
+CONF_GRID_NET_POWER_ENTITY = "grid_net_power_entity"
 CONF_DATA_SOLAR_POWER_ENTITY = "data_solar_power_entity"
 CONF_BATTERY_CHARGE_POWER_ENTITY = "battery_charge_power_entity"
 CONF_BATTERY_DISCHARGE_POWER_ENTITY = "battery_discharge_power_entity"
 DATA_POWER_SOURCE_KEYS = [
-    CONF_GRID_IMPORT_POWER_ENTITY,
-    CONF_GRID_EXPORT_POWER_ENTITY,
+    CONF_GRID_NET_POWER_ENTITY,
     CONF_DATA_SOLAR_POWER_ENTITY,
     CONF_BATTERY_CHARGE_POWER_ENTITY,
     CONF_BATTERY_DISCHARGE_POWER_ENTITY,
 ]
+
+# Temporary alpha.11.5 option keys retained only to prefill migration safely.
+LEGACY_CONF_GRID_IMPORT_POWER_ENTITY = "grid_import_power_entity"
+LEGACY_CONF_GRID_EXPORT_POWER_ENTITY = "grid_export_power_entity"
 
 CONF_TARIFF_PROFILE_ID = "tariff_profile_id"
 CONF_TARIFF_SUPPLIER = "tariff_supplier"
