@@ -4,7 +4,7 @@ from __future__ import annotations
 
 DOMAIN = "dummy_os_data"
 NAME = "Dummy OS"
-VERSION = "0.1.0-alpha.11.5"
+VERSION = "0.1.0-alpha.11.6"
 
 # Legacy Home Forecast source. Existing installations keep using this source
 # until the new canonical Data input layer has been live-validated.
