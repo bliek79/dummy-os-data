@@ -14,7 +14,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    CONF_HOME_POWER_ENTITY,
+    CANONICAL_HOME_POWER_ENTITY,
     MAX_HISTORY_DAYS,
     MIN_VALID_COVERAGE,
     PROFILE_NORMAL,
@@ -66,11 +66,8 @@ class DummyOSHomeDataCoordinator:
 
     @property
     def source_entity(self) -> str:
-        """Return configured source entity."""
-        return self.entry.options.get(
-            CONF_HOME_POWER_ENTITY,
-            self.entry.data[CONF_HOME_POWER_ENTITY],
-        )
+        """Return the canonical internal Home Power source."""
+        return CANONICAL_HOME_POWER_ENTITY
 
     @property
     def source_state(self) -> State | None:
