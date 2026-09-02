@@ -16,6 +16,7 @@ from homeassistant.util import dt as dt_util
 from .const import DOMAIN, FORECAST_SLOTS, NAME, QUARTER_MINUTES, VERSION
 from .coordinator import DummyOSHomeDataCoordinator
 from .forecast import HomeBaselineForecast
+from .home_input_sensor import build_home_input_sensors
 from .solar_sensor import build_solar_sensors
 from .weather import (
     OPEN_METEO_LATITUDE,
@@ -37,6 +38,7 @@ async def async_setup_entry(
     coordinator: DummyOSHomeDataCoordinator = entry.runtime_data
     async_add_entities(
         [
+            *build_home_input_sensors(coordinator),
             DummyOSActualQuarterSensor(coordinator),
             DummyOSHistoryStatusSensor(coordinator),
             DummyOSHistoryDaysSensor(coordinator),
