@@ -25,6 +25,7 @@ from .const import (
     CONF_GAS_SUPPLIER,
     CONF_GAS_TAX,
     CONF_HOME_POWER_ENTITY,
+    CONF_HOME_POWER_POSITIVE_DIRECTION,
     CONF_SOLAR_ACTUAL_NORTH_DC_ENTITY,
     CONF_SOLAR_ACTUAL_SOUTH_DC_ENTITY,
     CONF_SOLAR_ACTUAL_TOTAL_ENTITY,
@@ -50,6 +51,8 @@ from .const import (
     DEFAULT_SOLAR_ACTUAL_SOUTH_DC_ENTITY,
     DEFAULT_SOLAR_ACTUAL_TOTAL_ENTITY,
     DOMAIN,
+    HOME_POWER_POSITIVE_CONSUMPTION,
+    HOME_POWER_POSITIVE_DIRECTION_OPTIONS,
     NAME,
 )
 
@@ -73,13 +76,33 @@ class DummyOSDataConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             elif state.attributes.get("unit_of_measurement") not in {"W", "kW"}:
                 errors["base"] = "unsupported_unit"
             else:
-                return self.async_create_entry(title=NAME, data={CONF_HOME_POWER_ENTITY: entity_id})
+                return self.async_create_entry(
+                    title=NAME,
+                    data={
+                        CONF_HOME_POWER_ENTITY: entity_id,
+                        CONF_HOME_POWER_POSITIVE_DIRECTION: user_input[
+                            CONF_HOME_POWER_POSITIVE_DIRECTION
+                        ],
+                    },
+                )
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_HOME_POWER_ENTITY, default=DEFAULT_HOME_POWER_ENTITY): selector.EntitySelector(
+                vol.Required(
+                    CONF_HOME_POWER_ENTITY,
+                    default=DEFAULT_HOME_POWER_ENTITY,
+                ): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor")
-                )
+                ),
+                vol.Required(
+                    CONF_HOME_POWER_POSITIVE_DIRECTION,
+                    default=HOME_POWER_POSITIVE_CONSUMPTION,
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=HOME_POWER_POSITIVE_DIRECTION_OPTIONS,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
             }
         )
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
@@ -106,6 +129,18 @@ class DummyOSDataOptionsFlow(config_entries.OptionsFlow):
             {
                 vol.Required(CONF_HOME_POWER_ENTITY, default=self._current(CONF_HOME_POWER_ENTITY, DEFAULT_HOME_POWER_ENTITY)): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Required(
+                    CONF_HOME_POWER_POSITIVE_DIRECTION,
+                    default=self._current(
+                        CONF_HOME_POWER_POSITIVE_DIRECTION,
+                        HOME_POWER_POSITIVE_CONSUMPTION,
+                    ),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=HOME_POWER_POSITIVE_DIRECTION_OPTIONS,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
                 ),
                 vol.Required(CONF_TARIFF_PROFILE_ID, default=self._current(CONF_TARIFF_PROFILE_ID, "current")): str,
                 vol.Required(CONF_TARIFF_SUPPLIER, default=self._current(CONF_TARIFF_SUPPLIER, "ANWB Energie")): str,
