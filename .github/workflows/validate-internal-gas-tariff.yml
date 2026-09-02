@@ -1,0 +1,31 @@
+name: Validate internal gas tariff
+
+on:
+  push:
+    branches:
+      - fix/prices-internal-gas-tariff
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Python sources
+        run: python -m compileall custom_components/dummy_os_data tests
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Validate internal gas tariff contract
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          prices = Path("custom_components/dummy_os_data/prices.py").read_text()
+          assert "GAS_VARIABLE_ADDON_ENTITY" not in prices
+          assert "input_number.gas_markup_per_m3" not in prices
+          assert '"gas_variable_addon_source": "dummy_os_data_options"' in prices
+          assert "return self._num(CONF_GAS_SUPPLIER) + self._num(CONF_GAS_TAX)" in prices
+          PY
