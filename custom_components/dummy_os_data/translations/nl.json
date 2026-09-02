@@ -3,10 +3,13 @@
     "step": {
       "user": {
         "title": "Dummy OS Data",
-        "description": "Selecteer de canonieke Home Power-sensor waarmee historische woningdata per kwartier wordt opgebouwd.",
+        "description": "Selecteer de onderliggende vermogensstromen waarmee Dummy OS Data zelf het canonieke woningvermogen opbouwt.",
         "data": {
-          "home_power_entity": "Bron woningvermogen",
-          "home_power_positive_direction": "Bronteken: positief vermogen betekent"
+          "grid_import_power_entity": "Bron netafnamevermogen",
+          "grid_export_power_entity": "Bron terugleververmogen",
+          "data_solar_power_entity": "Bron solarvermogen",
+          "battery_charge_power_entity": "Bron batterij laadvermogen",
+          "battery_discharge_power_entity": "Bron batterij ontlaadvermogen"
         }
       }
     },
@@ -22,10 +25,13 @@
     "step": {
       "init": {
         "title": "Dummy OS Data-opties",
-        "description": "Configureer de bronnen voor Woning, Prijzen en Solar. De solar-azimut gebruikt de Open-Meteo-conventie: 0 graden is zuid en +/-180 graden is noord.",
+        "description": "Configureer eerst de onderliggende energiestromen die Dummy OS Data gebruikt. Het woningvermogen wordt intern berekend uit de vijf geselecteerde vermogensbronnen. Daarna volgen Prijzen en Solar.",
         "data": {
-          "home_power_entity": "Bron woningvermogen",
-          "home_power_positive_direction": "Bronteken: positief vermogen betekent",
+          "grid_import_power_entity": "Bron netafnamevermogen",
+          "grid_export_power_entity": "Bron terugleververmogen",
+          "data_solar_power_entity": "Bron solarvermogen",
+          "battery_charge_power_entity": "Bron batterij laadvermogen",
+          "battery_discharge_power_entity": "Bron batterij ontlaadvermogen",
           "tariff_profile_id": "Tariefprofiel-ID",
           "tariff_supplier": "Energieleverancier",
           "tariff_valid_from": "Tarief geldig vanaf (JJJJ-MM-DD)",
