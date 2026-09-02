@@ -6,6 +6,8 @@ DOMAIN = "dummy_os_data"
 NAME = "Dummy OS"
 VERSION = "0.1.0-alpha.11.4"
 
+# Legacy Home Forecast source. Existing installations keep using this source
+# until the new canonical Data input layer has been live-validated.
 CONF_HOME_POWER_ENTITY = "home_power_entity"
 DEFAULT_HOME_POWER_ENTITY = "sensor.home_power"
 CONF_HOME_POWER_POSITIVE_DIRECTION = "home_power_positive_direction"
@@ -14,6 +16,20 @@ HOME_POWER_POSITIVE_EXPORT = "export"
 HOME_POWER_POSITIVE_DIRECTION_OPTIONS = [
     HOME_POWER_POSITIVE_CONSUMPTION,
     HOME_POWER_POSITIVE_EXPORT,
+]
+
+# Canonical Dummy OS Data energy-flow inputs.
+CONF_GRID_IMPORT_POWER_ENTITY = "grid_import_power_entity"
+CONF_GRID_EXPORT_POWER_ENTITY = "grid_export_power_entity"
+CONF_DATA_SOLAR_POWER_ENTITY = "data_solar_power_entity"
+CONF_BATTERY_CHARGE_POWER_ENTITY = "battery_charge_power_entity"
+CONF_BATTERY_DISCHARGE_POWER_ENTITY = "battery_discharge_power_entity"
+DATA_POWER_SOURCE_KEYS = [
+    CONF_GRID_IMPORT_POWER_ENTITY,
+    CONF_GRID_EXPORT_POWER_ENTITY,
+    CONF_DATA_SOLAR_POWER_ENTITY,
+    CONF_BATTERY_CHARGE_POWER_ENTITY,
+    CONF_BATTERY_DISCHARGE_POWER_ENTITY,
 ]
 
 CONF_TARIFF_PROFILE_ID = "tariff_profile_id"
