@@ -3,10 +3,9 @@
     "step": {
       "user": {
         "title": "Dummy OS Data",
-        "description": "Select the underlying power-flow sensors used to build canonical Dummy OS Data Home Power.",
+        "description": "Select the underlying power-flow sensors used to build canonical Dummy OS Data Home Power. Grid power uses one bidirectional source: positive = import, negative = export.",
         "data": {
-          "grid_import_power_entity": "Grid import power source",
-          "grid_export_power_entity": "Grid export power source",
+          "grid_net_power_entity": "Bidirectional grid power source",
           "data_solar_power_entity": "Solar power source",
           "battery_charge_power_entity": "Battery charge power source",
           "battery_discharge_power_entity": "Battery discharge power source"
@@ -25,10 +24,9 @@
     "step": {
       "init": {
         "title": "Dummy OS Data options",
-        "description": "Configure the underlying energy flows used by Dummy OS Data, followed by Prices and Solar settings. Home Power is calculated internally from the five selected power sources.",
+        "description": "Configure the four underlying energy sources used by Dummy OS Data. Grid power is one bidirectional sensor: positive = import and negative = export. Home Power is calculated internally. Then configure Prices and Solar.",
         "data": {
-          "grid_import_power_entity": "Grid import power source",
-          "grid_export_power_entity": "Grid export power source",
+          "grid_net_power_entity": "Bidirectional grid power source",
           "data_solar_power_entity": "Solar power source",
           "battery_charge_power_entity": "Battery charge power source",
           "battery_discharge_power_entity": "Battery discharge power source",
