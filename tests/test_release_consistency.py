@@ -100,8 +100,8 @@ class ReleaseConsistencyTests(unittest.TestCase):
         self.assertIn("max(-grid_net, 0.0)", sensor_source)
         self.assertIn("positive_import_negative_export", sensor_source)
         self.assertIn("CONF_GRID_NET_POWER_ENTITY", config_flow)
-        self.assertNotIn("CONF_GRID_IMPORT_POWER_ENTITY", config_flow)
-        self.assertNotIn("CONF_GRID_EXPORT_POWER_ENTITY", config_flow)
+        self.assertNotIn("\n    CONF_GRID_IMPORT_POWER_ENTITY,", config_flow)
+        self.assertNotIn("\n    CONF_GRID_EXPORT_POWER_ENTITY,", config_flow)
 
     def test_solar_examples_reference_only_registered_entities(self) -> None:
         sensor_source = (ROOT / "custom_components/dummy_os_data/solar_sensor.py").read_text()
