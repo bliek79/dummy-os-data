@@ -1,57 +1,46 @@
 # GitHub Release
 
-**Tag:** `0.1.0-alpha.11.5`
+**Tag:** `0.1.0-alpha.11.6`
 
-**Release title:** `Dummy OS Data 0.1.0-alpha.11.5 - Data Home Power Source Contract`
+**Release title:** `Dummy OS Data 0.1.0-alpha.11.6 - Bidirectional Grid Power Input`
 
-## Dummy OS Data 0.1.0-alpha.11.5
+## Dummy OS Data 0.1.0-alpha.11.6
 
-Deze alpha corrigeert de Home Power-inputlaag structureel. Dummy OS Data gebruikt niet langer een reeds samengestelde Home Power-sensor als primaire bron voor de nieuwe canonieke Data-laag, maar laat de gebruiker de onderliggende energiestromen selecteren en bouwt daaruit zelf het woningvermogen op.
+Deze alpha corrigeert de netvermogensbron voor installaties met één bidirectionele netmeter. Dummy OS Data gebruikt nu één geselecteerde netsensor waarbij positief vermogen netafname betekent en negatief vermogen teruglevering. Import en export worden daar intern uit afgeleid.
 
-### Nieuw
+### Nieuw en gecorrigeerd
 
-- Vijf configureerbare onderliggende vermogensbronnen in de Config/Options Flow:
-  - netafname / grid import;
-  - teruglevering / grid export;
-  - solarproductie;
-  - batterij laden;
-  - batterij ontladen.
-- Iedere bron wordt naar watt genormaliseerd en als positieve vermogensgrootte gebruikt.
-- Dummy OS Data berekent canoniek woningvermogen volgens:
+- Eén configureerbare netvermogensbron: `grid_net_power_entity`.
+- Vaste tekenconventie voor deze bron:
+  - positief = netafname / import;
+  - negatief = teruglevering / export.
+- Nieuwe canonieke signed netsensor:
+  - `sensor.do_data_grid_net_power`.
+- Afgeleide positieve stromen:
+  - `sensor.do_data_grid_import_power = max(grid_net, 0)`;
+  - `sensor.do_data_grid_export_power = max(-grid_net, 0)`.
+- De aparte bronselectors voor solar, batterij laden en batterij ontladen blijven behouden.
+- `sensor.do_data_home_power` blijft berekend volgens:
   `solar + grid_import + battery_discharge - grid_export - battery_charge`.
-- Definitieve Data-entiteiten:
-  - `sensor.do_data_grid_import_power`;
-  - `sensor.do_data_grid_export_power`;
-  - `sensor.do_data_solar_power`;
-  - `sensor.do_data_battery_charge_power`;
-  - `sensor.do_data_battery_discharge_power`;
-  - `sensor.do_data_home_power`.
 
-### Entity-ID-regie
+### Migratie vanaf alpha.11.5
 
-- De tijdelijke alpha.11.4 Home-inputentiteiten worden alleen verwijderd wanneer ze aantoonbaar automatisch door Home Assistant zijn aangemaakt.
-- Handmatig hernoemde entiteiten blijven ongemoeid.
-- De definitieve `do_data_*`-namen worden geborgd via vaste unique-ID's, `suggested_object_id`, expliciete migratiedoelen en migratie vóór en na platformsetup.
-- Daarmee wordt voorkomen dat Home Assistant opnieuw onverwachte `sensor.dummy_os_*`-entity-ID's als definitieve Data-entiteiten laat staan.
-
-### Configuratie
-
-- De eerdere primaire keuze `Bron woningvermogen` voor de nieuwe Data-inputlaag vervalt.
-- De gebruiker kiest nu rechtstreeks de vijf onderliggende vermogensstromen waaruit Dummy OS Data Home Power opbouwt.
-- Alleen vermogenssensoren met `W` of `kW` worden geaccepteerd.
-- Ontbrekende of ongeldige bronwaarden worden niet stilzwijgend als `0 W` geïnterpreteerd.
+- De twee tijdelijke velden voor afzonderlijke grid import/export-bronnen worden niet meer gebruikt als actieve bronconfiguratie.
+- Wanneer in alpha.11.5 dezelfde bidirectionele sensor voor zowel import als export was geselecteerd, wordt die sensor automatisch als voorinvulling gebruikt voor `grid_net_power_entity`.
+- De definitieve `sensor.do_data_*`-entity-ID-regie blijft actief.
 
 ### Validatie in Home Assistant
 
 Controleer na installatie en volledige herstart:
 
-1. Dat Dummy OS Data versie `0.1.0-alpha.11.5` toont.
-2. Dat in de opties vijf afzonderlijke bronselectors voor grid import, grid export, solar, batterij laden en batterij ontladen zichtbaar zijn.
-3. Dat de zes definitieve `sensor.do_data_*`-entiteiten bestaan.
-4. Dat de vijf bronsensoren dezelfde actuele vermogensgrootte tonen als de gekozen HA-bronnen, omgerekend naar watt.
-5. Dat `sensor.do_data_home_power` gelijk loopt met de verwachte formule en als referentie kan worden vergeleken met de bestaande `sensor.home_power`.
-6. Dat automatisch gegenereerde tijdelijke alpha.11.4 Home-inputentiteiten niet als dubbele actieve Data-entiteiten blijven bestaan.
-7. Dat bestaande Home Forecast-functionaliteit en historische kwartierdata niet onverwacht worden beschadigd.
+1. Dat Dummy OS Data versie `0.1.0-alpha.11.6` toont.
+2. Dat in de opties nog maar één netveld zichtbaar is: `Bron netvermogen (+ afname / - teruglevering)`.
+3. Dat daarnaast aparte bronnen zichtbaar zijn voor solar, batterij laden en batterij ontladen.
+4. Dat `sensor.do_data_grid_net_power` exact dezelfde tekenrichting en vermogensgrootte volgt als de gekozen bidirectionele netsensor, omgerekend naar watt.
+5. Dat bij positieve netwaarde `sensor.do_data_grid_import_power` dezelfde positieve waarde toont en `sensor.do_data_grid_export_power` 0 W toont.
+6. Dat bij negatieve netwaarde `sensor.do_data_grid_import_power` 0 W toont en `sensor.do_data_grid_export_power` de positieve grootte van de teruglevering toont.
+7. Dat `sensor.do_data_home_power` gelijk loopt met de energiebalans en als referentie vergeleken kan worden met de bestaande `sensor.home_power`.
+8. Dat bestaande Home Forecast-functionaliteit en historische kwartierdata ongewijzigd blijven functioneren.
 
 ### Technische validatie
 
