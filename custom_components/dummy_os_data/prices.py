@@ -31,7 +31,6 @@ from .const import (
     CONF_VAT_PERCENT,
     DEFAULT_GAS_MARKET_ENTITY,
     FORECAST_SLOTS,
-    GAS_VARIABLE_ADDON_ENTITY,
     QUARTER_MINUTES,
 )
 
@@ -110,12 +109,7 @@ class DummyOSPricesCoordinator:
 
     @property
     def gas_variable_addon(self) -> float:
-        state = self.hass.states.get(GAS_VARIABLE_ADDON_ENTITY)
-        if state is not None and state.state not in {"unknown", "unavailable", "none", "None", ""}:
-            try:
-                return float(state.state)
-            except ValueError:
-                pass
+        """Return the internally configured variable gas tariff components."""
         return self._num(CONF_GAS_SUPPLIER) + self._num(CONF_GAS_TAX)
 
     @property
@@ -136,9 +130,10 @@ class DummyOSPricesCoordinator:
             "gas_supplier_incl_vat": self._num(CONF_GAS_SUPPLIER),
             "gas_tax_incl_vat": self._num(CONF_GAS_TAX),
             "gas_variable_addon_used": round(self.gas_variable_addon, 5),
-            "gas_variable_addon_source": GAS_VARIABLE_ADDON_ENTITY,
+            "gas_variable_addon_source": "dummy_os_data_options",
             "gas_fixed_supply_per_day": self._num(CONF_GAS_FIXED_SUPPLY_PER_DAY),
             "gas_grid_per_day": self._num(CONF_GAS_GRID_PER_DAY),
+            "tariff_edit_surface": "Dummy OS Data Options",
         }
 
     @property
@@ -166,7 +161,7 @@ class DummyOSPricesCoordinator:
         self._unsubs.append(
             async_track_state_change_event(
                 self.hass,
-                [self.gas_market_entity, GAS_VARIABLE_ADDON_ENTITY],
+                [self.gas_market_entity],
                 self._gas_source_changed,
             )
         )
@@ -197,7 +192,7 @@ class DummyOSPricesCoordinator:
 
     @callback
     def _gas_source_changed(self, _event: Event) -> None:
-        """Republish gas states as soon as EnergyZero or the gas add-on changes."""
+        """Republish gas states as soon as the external gas market price changes."""
         self._publish_states()
         self._notify()
 
@@ -357,11 +352,14 @@ class DummyOSPricesCoordinator:
                 "source": "EnergyZero + Dummy OS tariff profile",
                 "market_price_incl_vat": gas_market,
                 "variable_addon_incl_vat": round(self.gas_variable_addon, 5),
-                "variable_addon_source": GAS_VARIABLE_ADDON_ENTITY,
+                "variable_addon_source": "dummy_os_data_options",
                 "configured_supplier_component_incl_vat": self._num(CONF_GAS_SUPPLIER),
                 "configured_energy_tax_incl_vat": self._num(CONF_GAS_TAX),
+                "gas_fixed_supply_per_day": self._num(CONF_GAS_FIXED_SUPPLY_PER_DAY),
+                "gas_grid_per_day": self._num(CONF_GAS_GRID_PER_DAY),
                 "tariff_profile_id": tariff.get("profile_id"),
                 "tariff_valid_from": tariff.get("valid_from"),
+                "tariff_edit_surface": "Dummy OS Data Options",
             },
         )
 
