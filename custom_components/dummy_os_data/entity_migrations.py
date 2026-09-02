@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 
-# These are the entity IDs that Home Assistant actually generated on a clean
-# 0.1.0-alpha.11.0 installation. Keep this mapping explicit: release validation
-# must never infer a generated entity ID from a guessed prefix.
 SOLAR_GENERATED_ENTITY_ID_ALIASES: dict[str, str] = {
     "do_solar_status": "sensor.dummy_os_solar_source_status",
     "do_solar_forecast_timeline": "sensor.dummy_os_solar_forecast_timeline",
@@ -23,9 +20,6 @@ SOLAR_GENERATED_ENTITY_ID_ALIASES: dict[str, str] = {
     "do_solar_model": "sensor.dummy_os_solar_forecast_model",
 }
 
-# Explicit aliases observed or possible for the short-lived alpha.11.4 Home
-# Power input layer. These entities are safe to remove because they were newly
-# introduced for validation and have not been adopted by forecast/EMS consumers.
 OBSOLETE_HOME_INPUT_ENTITY_ALIASES: dict[str, set[str]] = {
     "do_input_home_power_raw": {
         "sensor.dummy_os_input_home_power_raw",
@@ -45,10 +39,8 @@ OBSOLETE_HOME_INPUT_ENTITY_ALIASES: dict[str, set[str]] = {
     },
 }
 
-# Redundant aliases for definitive do_data_* entities. Their entity names are
-# deliberately "DO Data ..." so first-time automatic generation should already
-# yield the target ID; this mapping is an extra safety net.
 DATA_GENERATED_ENTITY_ID_ALIASES: dict[str, set[str]] = {
+    "do_data_grid_net_power": {"sensor.dummy_os_do_data_grid_net_power"},
     "do_data_grid_import_power": {"sensor.dummy_os_do_data_grid_import_power"},
     "do_data_grid_export_power": {"sensor.dummy_os_do_data_grid_export_power"},
     "do_data_solar_power": {"sensor.dummy_os_do_data_solar_power"},
