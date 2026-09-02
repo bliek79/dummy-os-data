@@ -1,51 +1,66 @@
 # GitHub Release
 
-**Tag:** `0.1.0-alpha.11.8`
+**Tag:** `0.1.0-alpha.11.9`
 
-**Release title:** `Dummy OS Data 0.1.0-alpha.11.8 - Canonical Home Forecast Source`
+**Release title:** `Dummy OS Data 0.1.0-alpha.11.9 - Internal Gas Tariff Profile`
 
-## Dummy OS Data 0.1.0-alpha.11.8
+## Dummy OS Data 0.1.0-alpha.11.9
 
-Deze alpha sluit Home Forecast definitief aan op de canonieke Dummy OS Data-woningvermogenssensor `sensor.do_data_home_power`.
+Deze alpha maakt de interne Dummy OS Data-tariefconfiguratie leidend voor gas. Alleen de gasmarktprijs blijft extern; leverancierstoeslag, energiebelasting, vaste leveringskosten en netbeheerkosten worden binnen Dummy OS Data beheerd en blijven eenvoudig wijzigbaar via de Options Flow.
 
 ### Gewijzigd
 
-- Home Forecast gebruikt voortaan vast `sensor.do_data_home_power` als actual-bron voor kwartierintegratie en nieuwe historie.
-- De coordinator gebruikt hiervoor `CANONICAL_HOME_POWER_ENTITY`.
-- De oude `home_power_entity`-config blijft uitsluitend bestaan voor compatibiliteit met bestaande config entries en bepaalt de productieketen niet meer.
+- `gas_variable_addon` wordt uitsluitend berekend uit `gas_supplier_incl_vat + gas_tax_incl_vat` uit Dummy OS Data Options.
+- `sensor.do_prices_gas_all_in` gebruikt daardoor geen externe gas-markup-helper meer.
+- Prices luistert voor gas alleen nog naar de externe gasmarktprijsbron.
+- `sensor.do_prices_gas_all_in` rapporteert `variable_addon_source: dummy_os_data_options`.
+- De attributen tonen ook de intern geconfigureerde vaste leveringskosten en netbeheerkosten.
+- `tariff_edit_surface: Dummy OS Data Options` maakt expliciet waar toekomstige tariefwijzigingen moeten worden gedaan.
+
+### Tarieven eenvoudig aanpassen
+
+De bestaande Dummy OS Data Options Flow blijft de centrale plek voor tariefwijzigingen. Voor gas zijn daar onder meer beschikbaar:
+
+- `gas_supplier_incl_vat`
+- `gas_tax_incl_vat`
+- `gas_fixed_supply_per_day`
+- `gas_grid_per_day`
+- `tariff_valid_from`
+
+Voor elektriciteit blijven aparte import- en exportcomponenten beschikbaar en ongewijzigd.
+
+### Externe bron
+
+- Alleen de gasmarktprijs blijft extern via de ingestelde `gas_market_entity`.
+- De standaardbron blijft `sensor.energyzero_today_gas_current_hour_price`.
+- `input_number.gas_markup_per_m3` maakt geen deel meer uit van de Dummy OS Data Prices-productieketen.
 
 ### Behouden
 
-- Bestaande Home Forecast-historie blijft behouden.
-- Bestaande forecast snapshots blijven behouden.
-- Bestaande Home Forecast-evaluaties blijven behouden.
+- Home Forecast blijft de canonieke `sensor.do_data_home_power` gebruiken.
 - De native forecastarchitectuur blijft 15 minuten / 72 uur / 288 slots.
-- Normal/Away-profielen en historical_baseline 0.4 blijven ongewijzigd.
-
-### Ongewijzigd
-
-- De zeven definitieve `sensor.do_data_*`-energiesensoren blijven ongewijzigd.
-- Weather, Solar Forecast, Prices en Degree Days worden in deze release niet functioneel gewijzigd.
-- Geen EMS-planning, SOC-logica, reservebeleid, safety of fysieke batterijsturing toegevoegd.
+- Weather, Solar Forecast en Degree Days blijven functioneel ongewijzigd.
+- Geen EMS-planning of fysieke batterijsturing toegevoegd.
 
 ### Technische validatie
 
-De bronwijziging uit PR #39 is vóór deze release technisch gevalideerd:
+De gasprijswijziging uit PR #42 is vóór deze release technisch gevalideerd:
 
 - Python compile geslaagd.
-- JSON-validatie geslaagd.
-- 25 tests geslaagd.
-- Releaseconsistentietest controleert expliciet dat Home Forecast `sensor.do_data_home_power` gebruikt.
+- Volledige unit-testset geslaagd.
+- Gerichte regressietest controleert dat `input_number.gas_markup_per_m3` niet terugkomt in de Prices-productieketen.
+- Releaseconsistentietest controleert de interne gas-tariefarchitectuur.
 
 ### Live validatie in Home Assistant
 
 Na installatie en volledige herstart controleren:
 
-1. Dummy OS Data toont versie `0.1.0-alpha.11.8`.
-2. `sensor.do_data_home_power` blijft live correct berekend worden.
-3. `sensor.do_home_actual_quarter` blijft elk afgerond kwartier vullen met minimaal 90% dekking wanneer de bron geldig is.
-4. Nieuwe Home Forecast-kwartierobservaties worden opgebouwd uit `sensor.do_data_home_power` en niet meer uit `sensor.home_power`.
-5. Bestaande historie, snapshots en evaluaties blijven aanwezig.
-6. Home Forecast 72h / 288 slots, next quarter, accuracy, MAE, bias en model health blijven functioneren.
+1. Dummy OS Data toont versie `0.1.0-alpha.11.9`.
+2. `sensor.do_prices_gas_market` blijft de externe marktprijs tonen.
+3. `sensor.do_prices_gas_all_in` gebruikt de interne Dummy OS Data-tariefcomponenten.
+4. `variable_addon_source` is `dummy_os_data_options`.
+5. Wijzigen van de gaswaarden via Dummy OS Data Options werkt correct na reload/herstart.
+6. De oude `input_number.gas_markup_per_m3` heeft geen invloed meer op `sensor.do_prices_gas_all_in`.
+7. Elektriciteits-import/exportprijzen en overige forecastlagen blijven ongewijzigd functioneren.
 
-De bronwissel wordt pas als volledig Gereed gemarkeerd nadat deze live Home Assistant-validatie is uitgevoerd.
+De wijziging wordt pas als volledig live gevalideerd gemarkeerd nadat deze controles in Home Assistant zijn uitgevoerd.
