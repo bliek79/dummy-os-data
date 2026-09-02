@@ -18,7 +18,7 @@ SOLAR_GENERATED_ENTITY_ID_ALIASES = MIGRATION_MODULE.SOLAR_GENERATED_ENTITY_ID_A
 OBSOLETE_HOME_INPUT_ENTITY_ALIASES = MIGRATION_MODULE.OBSOLETE_HOME_INPUT_ENTITY_ALIASES
 is_known_generated_entity_id = MIGRATION_MODULE.is_known_generated_entity_id
 
-VERSION = "0.1.0-alpha.11.9"
+VERSION = "0.1.0-alpha.11.10"
 
 EXPECTED_SOLAR_ENTITY_ID_ALIASES = {
     "do_solar_status": "sensor.dummy_os_solar_source_status",
@@ -131,6 +131,15 @@ class ReleaseConsistencyTests(unittest.TestCase):
             for entity_id in re.findall(r"sensor\.(do_solar_[a-z0-9_]+)", example.read_text()):
                 self.assertIn(entity_id, registered_unique_ids, f"{example.name} references unregistered sensor.{entity_id}")
         self.assertIn("do_solar_evaluation_last_completed_quarter", registered_unique_ids)
+
+    def test_solar_horizon_snapshot_release_contract(self) -> None:
+        solar_source = (ROOT / "custom_components/dummy_os_data/solar.py").read_text()
+        self.assertIn("SOLAR_HORIZON_HOURS = (1, 6, 24, 48, 72)", solar_source)
+        self.assertIn('"horizon_snapshots": self._horizon_snapshots', solar_source)
+        self.assertIn('self._horizon_snapshots.setdefault(snapshot["snapshot_id"], snapshot)', solar_source)
+        self.assertIn('"horizon_snapshot_vs_completed_quarter_v1"', solar_source)
+        self.assertIn('"horizon_evaluations"', solar_source)
+        self.assertIn('"pending_horizon_snapshot_count"', solar_source)
 
 
 if __name__ == "__main__":
