@@ -88,6 +88,11 @@ class ReleaseConsistencyTests(unittest.TestCase):
     def test_temporary_home_input_aliases_are_explicitly_cleaned(self) -> None:
         expected = {"do_input_home_power_raw", "do_home_power", "do_home_import_power", "do_home_export_power"}
         self.assertEqual(expected, set(OBSOLETE_HOME_INPUT_ENTITY_ALIASES))
+        init_source = (ROOT / "custom_components/dummy_os_data/__init__.py").read_text()
+        self.assertIn("hass.states.async_remove(registered_entity_id)", init_source)
+        self.assertIn("hass.states.async_remove(alias_entity_id)", init_source)
+        self.assertIn("_is_obsolete_home_input_state", init_source)
+        self.assertGreaterEqual(init_source.count("_async_remove_obsolete_home_input_entities(hass)"), 2)
 
     def test_bidirectional_grid_contract_is_fixed(self) -> None:
         sensor_source = (ROOT / "custom_components/dummy_os_data/home_input_sensor.py").read_text()
