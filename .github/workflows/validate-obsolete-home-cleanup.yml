@@ -1,0 +1,31 @@
+name: Validate obsolete Home input cleanup
+
+on:
+  push:
+    branches:
+      - fix/cleanup-obsolete-home-input-entities
+    paths:
+      - custom_components/dummy_os_data/**
+      - tests/**
+      - .github/workflows/validate-obsolete-home-cleanup.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile Python
+        run: python -m compileall custom_components/dummy_os_data tests
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+      - name: Validate JSON
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for path in [Path('custom_components/dummy_os_data/manifest.json'), Path('custom_components/dummy_os_data/strings.json'), Path('custom_components/dummy_os_data/translations/en.json'), Path('custom_components/dummy_os_data/translations/nl.json')]:
+              json.loads(path.read_text())
+          PY
