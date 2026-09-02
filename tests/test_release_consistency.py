@@ -108,6 +108,13 @@ class ReleaseConsistencyTests(unittest.TestCase):
         self.assertNotIn("\n    CONF_GRID_IMPORT_POWER_ENTITY,", config_flow)
         self.assertNotIn("\n    CONF_GRID_EXPORT_POWER_ENTITY,", config_flow)
 
+    def test_home_forecast_uses_canonical_data_home_power(self) -> None:
+        const_source = (ROOT / "custom_components/dummy_os_data/const.py").read_text()
+        coordinator_source = (ROOT / "custom_components/dummy_os_data/coordinator.py").read_text()
+        self.assertIn('CANONICAL_HOME_POWER_ENTITY = "sensor.do_data_home_power"', const_source)
+        self.assertIn("return CANONICAL_HOME_POWER_ENTITY", coordinator_source)
+        self.assertNotIn("self.entry.options.get(\n            CONF_HOME_POWER_ENTITY", coordinator_source)
+
     def test_solar_examples_reference_only_registered_entities(self) -> None:
         sensor_source = (ROOT / "custom_components/dummy_os_data/solar_sensor.py").read_text()
         registered_unique_ids = set(re.findall(r'_attr_unique_id = "(do_solar_[^"]+)"', sensor_source))
