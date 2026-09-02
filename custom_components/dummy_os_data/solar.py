@@ -62,6 +62,7 @@ SOLAR_RESOLUTION_MINUTES = 15
 SOLAR_BUFFER_SLOTS = 4
 SOLAR_REQUEST_EXTRA_SLOTS = 7
 SOLAR_STORAGE_SAVE_DELAY_SECONDS = 30
+SOLAR_HORIZON_HOURS = (1, 6, 24, 48, 72)
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +124,8 @@ class DummyOSSolarCoordinator:
             SOLAR_STORAGE_KEY,
         )
         self.last_evaluation: dict[str, Any] | None = None
+        self.last_horizon_evaluations: list[dict[str, Any]] = []
+        self._horizon_snapshots: dict[str, dict[str, Any]] = {}
         self._quarter_start: datetime | None = None
         self._forecast_snapshot: dict[str, Any] | None = None
         self._energy_ws: dict[str, float] = {roof: 0.0 for roof in ROOFS}
@@ -154,6 +157,11 @@ class DummyOSSolarCoordinator:
     def active_forecast_snapshot_available(self) -> bool:
         """Return whether the active quarter has a valid pre-actual forecast."""
         return self._forecast_snapshot is not None
+
+    @property
+    def pending_horizon_snapshot_count(self) -> int:
+        """Return the number of immutable future horizon snapshots awaiting actuals."""
+        return len(self._horizon_snapshots)
 
     def _option(self, key: str, default: Any) -> Any:
         return self.entry.options.get(key, self.entry.data.get(key, default))
@@ -206,10 +214,23 @@ class DummyOSSolarCoordinator:
         """Load evaluation state, fetch Solar data and start listeners."""
         stored = await self.store.async_load() or {}
         self.last_evaluation = stored.get("last_evaluation")
+        raw_horizon_evaluations = stored.get("last_horizon_evaluations")
+        if isinstance(raw_horizon_evaluations, list):
+            self.last_horizon_evaluations = [
+                item for item in raw_horizon_evaluations if isinstance(item, dict)
+            ]
+        raw_horizon_snapshots = stored.get("horizon_snapshots")
+        if isinstance(raw_horizon_snapshots, dict):
+            self._horizon_snapshots = {
+                str(key): value
+                for key, value in raw_horizon_snapshots.items()
+                if isinstance(value, dict)
+            }
         await self.async_refresh()
 
         now = dt_util.utcnow()
         self._restore_or_start_quarter(stored.get("active_quarter"), now)
+        self._prune_horizon_snapshots(self._quarter_start or now)
         self._set_actual_sample(now)
 
         self._unsubs.append(async_track_time_change(self.hass, self._async_hourly_refresh, minute=0, second=20))
@@ -258,10 +279,11 @@ class DummyOSSolarCoordinator:
         self._notify()
 
     async def _async_quarter_boundary(self, now: datetime) -> None:
-        """Finalize actual energy and freeze the new slot forecast."""
+        """Finalize actual energy, capture future horizons and freeze the new slot."""
         now_utc = dt_util.as_utc(now)
         self._integrate_actual_until(now_utc)
         self._finalize_quarter(now_utc)
+        self._capture_horizon_snapshots(now_utc)
         # This callback is registered for the exact quarter boundary. Use that
         # logical boundary as capture time so event-loop latency does not turn
         # an on-time immutable snapshot into a false "late forecast" result.
@@ -363,6 +385,37 @@ class DummyOSSolarCoordinator:
             "captured_at": captured.isoformat(),
         }
 
+    def _capture_horizon_snapshots(self, captured_at: datetime) -> None:
+        """Freeze the forecast for each configured future validation horizon."""
+        captured = dt_util.as_utc(captured_at)
+        self._prune_horizon_snapshots(captured)
+        for horizon_hours in SOLAR_HORIZON_HOURS:
+            target_start = captured + timedelta(hours=horizon_hours)
+            snapshot = self._snapshot_for_slot(target_start, captured)
+            if snapshot is None:
+                continue
+            snapshot["horizon_hours"] = horizon_hours
+            snapshot["snapshot_id"] = (
+                f"{target_start.isoformat()}|{horizon_hours}h"
+            )
+            self._horizon_snapshots.setdefault(snapshot["snapshot_id"], snapshot)
+
+    def _prune_horizon_snapshots(self, current_slot_start: datetime) -> None:
+        """Discard stale pending snapshots that can no longer receive an actual."""
+        current = dt_util.as_utc(current_slot_start)
+        stale: list[str] = []
+        for key, snapshot in self._horizon_snapshots.items():
+            try:
+                target = datetime.fromisoformat(str(snapshot.get("start")))
+                if target.tzinfo is None:
+                    target = target.replace(tzinfo=dt_util.UTC)
+                if dt_util.as_utc(target) < current:
+                    stale.append(key)
+            except (TypeError, ValueError):
+                stale.append(key)
+        for key in stale:
+            self._horizon_snapshots.pop(key, None)
+
     def _set_actual_sample(self, now_utc: datetime) -> None:
         """Store the power values that apply from now onward."""
         actual = self.actual_power
@@ -389,7 +442,7 @@ class DummyOSSolarCoordinator:
         self._last_sample_time = interval_end
 
     def _finalize_quarter(self, end_utc: datetime) -> None:
-        """Publish a completed record even when data quality is insufficient."""
+        """Publish the direct quarter record and any due horizon evaluations."""
         if self._quarter_start is None:
             return
         expected_end = self._quarter_start + timedelta(minutes=QUARTER_MINUTES)
@@ -403,6 +456,54 @@ class DummyOSSolarCoordinator:
             self._sample_count,
             SOLAR_MIN_VALID_COVERAGE,
         )
+
+        slot_id = self._quarter_start.isoformat()
+        due: list[tuple[str, dict[str, Any]]] = [
+            (key, snapshot)
+            for key, snapshot in self._horizon_snapshots.items()
+            if snapshot.get("start") == slot_id
+        ]
+        horizon_evaluations: list[dict[str, Any]] = []
+        for key, snapshot in due:
+            evaluation = build_quarter_evaluation(
+                self._quarter_start,
+                snapshot,
+                self._energy_ws,
+                self._covered_seconds,
+                self._sample_count,
+                SOLAR_MIN_VALID_COVERAGE,
+            )
+            evaluation["evaluation_method"] = "horizon_snapshot_vs_completed_quarter_v1"
+            evaluation["horizon_hours"] = int(snapshot.get("horizon_hours", 0))
+            evaluation["snapshot_id"] = snapshot.get("snapshot_id", key)
+            horizon_evaluations.append(evaluation)
+            self._horizon_snapshots.pop(key, None)
+
+        horizon_evaluations.sort(key=lambda item: int(item.get("horizon_hours", 0)))
+        self.last_horizon_evaluations = horizon_evaluations
+        self.last_evaluation["horizon_evaluations"] = horizon_evaluations
+        self.last_evaluation["horizon_evaluation_count"] = len(horizon_evaluations)
+        self.last_evaluation["horizon_hours_supported"] = list(SOLAR_HORIZON_HOURS)
+        self.last_evaluation["pending_horizon_snapshot_count"] = len(self._horizon_snapshots)
+        for evaluation in horizon_evaluations:
+            hours = int(evaluation["horizon_hours"])
+            prefix = f"horizon_{hours}h_"
+            for field in (
+                "status",
+                "valid",
+                "forecast_captured_at",
+                "forecast_source_update",
+                "forecast_provider",
+                "forecast_model",
+                "forecast_total_kwh",
+                "actual_total_kwh",
+                "error_total_kwh",
+                "absolute_error_total_kwh",
+                "bias_total_percent",
+                "accuracy_total_percent",
+                "coverage_total_percent",
+            ):
+                self.last_evaluation[prefix + field] = evaluation.get(field)
 
     def _storage_data(self) -> dict[str, Any]:
         """Return compact JSON-safe evaluation state."""
@@ -418,6 +519,8 @@ class DummyOSSolarCoordinator:
         return {
             "active_quarter": active,
             "last_evaluation": self.last_evaluation,
+            "last_horizon_evaluations": self.last_horizon_evaluations,
+            "horizon_snapshots": self._horizon_snapshots,
         }
 
     async def _async_hourly_refresh(self, _now: datetime) -> None:
