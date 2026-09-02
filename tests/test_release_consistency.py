@@ -17,7 +17,7 @@ MIGRATION_SPEC.loader.exec_module(MIGRATION_MODULE)
 SOLAR_GENERATED_ENTITY_ID_ALIASES = MIGRATION_MODULE.SOLAR_GENERATED_ENTITY_ID_ALIASES
 is_known_generated_entity_id = MIGRATION_MODULE.is_known_generated_entity_id
 
-VERSION = "0.1.0-alpha.11.3"
+VERSION = "0.1.0-alpha.11.4"
 
 EXPECTED_SOLAR_ENTITY_ID_ALIASES = {
     "do_solar_status": "sensor.dummy_os_solar_source_status",
@@ -54,6 +54,9 @@ class ReleaseConsistencyTests(unittest.TestCase):
         expected = set(strings["options"]["step"]["init"]["data"])
         self.assertEqual(expected, set(english["options"]["step"]["init"]["data"]))
         self.assertEqual(expected, set(dutch["options"]["step"]["init"]["data"]))
+        expected_config = set(strings["config"]["step"]["user"]["data"])
+        self.assertEqual(expected_config, set(english["config"]["step"]["user"]["data"]))
+        self.assertEqual(expected_config, set(dutch["config"]["step"]["user"]["data"]))
 
     def test_all_observed_solar_entity_ids_have_exact_migration_aliases(self) -> None:
         self.assertEqual(EXPECTED_SOLAR_ENTITY_ID_ALIASES, SOLAR_GENERATED_ENTITY_ID_ALIASES)
@@ -69,6 +72,21 @@ class ReleaseConsistencyTests(unittest.TestCase):
         for unique_id, observed_entity_id in EXPECTED_SOLAR_ENTITY_ID_ALIASES.items():
             self.assertTrue(is_known_generated_entity_id("sensor", unique_id, observed_entity_id))
             self.assertFalse(is_known_generated_entity_id("sensor", unique_id, f"sensor.user_{unique_id}"))
+
+    def test_home_input_entities_are_registered_and_migrated(self) -> None:
+        sensor_source = (ROOT / "custom_components/dummy_os_data/home_input_sensor.py").read_text()
+        init_source = (ROOT / "custom_components/dummy_os_data/__init__.py").read_text()
+        sensor_platform = (ROOT / "custom_components/dummy_os_data/sensor.py").read_text()
+        expected = (
+            "do_input_home_power_raw",
+            "do_home_power",
+            "do_home_import_power",
+            "do_home_export_power",
+        )
+        for unique_id in expected:
+            self.assertIn(f'_attr_unique_id = "{unique_id}"', sensor_source)
+            self.assertIn(f'("sensor", "{unique_id}", "sensor.{unique_id}")', init_source)
+        self.assertIn("*build_home_input_sensors(coordinator)", sensor_platform)
 
     def test_solar_examples_reference_only_registered_entities(self) -> None:
         """Prevent another automation from naming a sensor that is not built."""
