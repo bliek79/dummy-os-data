@@ -5,7 +5,8 @@
         "title": "Dummy OS Data",
         "description": "Selecteer de canonieke Home Power-sensor waarmee historische woningdata per kwartier wordt opgebouwd.",
         "data": {
-          "home_power_entity": "Bron woningvermogen"
+          "home_power_entity": "Bron woningvermogen",
+          "home_power_positive_direction": "Bront teken: positief vermogen betekent"
         }
       }
     },
@@ -24,6 +25,7 @@
         "description": "Configureer de bronnen voor Woning, Prijzen en Solar. De solar-azimut gebruikt de Open-Meteo-conventie: 0 graden is zuid en +/-180 graden is noord.",
         "data": {
           "home_power_entity": "Bron woningvermogen",
+          "home_power_positive_direction": "Bront teken: positief vermogen betekent",
           "tariff_profile_id": "Tariefprofiel-ID",
           "tariff_supplier": "Energieleverancier",
           "tariff_valid_from": "Tarief geldig vanaf (JJJJ-MM-DD)",
