@@ -23,8 +23,48 @@ SOLAR_GENERATED_ENTITY_ID_ALIASES: dict[str, str] = {
     "do_solar_model": "sensor.dummy_os_solar_forecast_model",
 }
 
+# Explicit aliases observed or possible for the short-lived alpha.11.4 Home
+# Power input layer. These entities are safe to remove because they were newly
+# introduced for validation and have not been adopted by forecast/EMS consumers.
+OBSOLETE_HOME_INPUT_ENTITY_ALIASES: dict[str, set[str]] = {
+    "do_input_home_power_raw": {
+        "sensor.dummy_os_input_home_power_raw",
+        "sensor.do_input_home_power_raw",
+    },
+    "do_home_power": {
+        "sensor.dummy_os_home_power",
+        "sensor.do_home_power",
+    },
+    "do_home_import_power": {
+        "sensor.dummy_os_home_import_power",
+        "sensor.do_home_import_power",
+    },
+    "do_home_export_power": {
+        "sensor.dummy_os_home_export_power",
+        "sensor.do_home_export_power",
+    },
+}
+
+# Redundant aliases for definitive do_data_* entities. Their entity names are
+# deliberately "DO Data ..." so first-time automatic generation should already
+# yield the target ID; this mapping is an extra safety net.
+DATA_GENERATED_ENTITY_ID_ALIASES: dict[str, set[str]] = {
+    "do_data_grid_import_power": {"sensor.dummy_os_do_data_grid_import_power"},
+    "do_data_grid_export_power": {"sensor.dummy_os_do_data_grid_export_power"},
+    "do_data_solar_power": {"sensor.dummy_os_do_data_solar_power"},
+    "do_data_battery_charge_power": {"sensor.dummy_os_do_data_battery_charge_power"},
+    "do_data_battery_discharge_power": {"sensor.dummy_os_do_data_battery_discharge_power"},
+    "do_data_home_power": {"sensor.dummy_os_do_data_home_power"},
+}
+
 
 def is_known_generated_entity_id(platform: str, unique_id: str, entity_id: str) -> bool:
     """Return whether an entity ID is a safe, known automatic ID to migrate."""
     legacy_prefix = f"{platform}.dummy_os_data_dummy_os_"
-    return entity_id.startswith(legacy_prefix) or entity_id == SOLAR_GENERATED_ENTITY_ID_ALIASES.get(unique_id)
+    if entity_id.startswith(legacy_prefix):
+        return True
+    if entity_id == SOLAR_GENERATED_ENTITY_ID_ALIASES.get(unique_id):
+        return True
+    if entity_id in OBSOLETE_HOME_INPUT_ENTITY_ALIASES.get(unique_id, set()):
+        return True
+    return entity_id in DATA_GENERATED_ENTITY_ID_ALIASES.get(unique_id, set())
