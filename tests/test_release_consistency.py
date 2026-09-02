@@ -18,7 +18,7 @@ SOLAR_GENERATED_ENTITY_ID_ALIASES = MIGRATION_MODULE.SOLAR_GENERATED_ENTITY_ID_A
 OBSOLETE_HOME_INPUT_ENTITY_ALIASES = MIGRATION_MODULE.OBSOLETE_HOME_INPUT_ENTITY_ALIASES
 is_known_generated_entity_id = MIGRATION_MODULE.is_known_generated_entity_id
 
-VERSION = "0.1.0-alpha.11.8"
+VERSION = "0.1.0-alpha.11.9"
 
 EXPECTED_SOLAR_ENTITY_ID_ALIASES = {
     "do_solar_status": "sensor.dummy_os_solar_source_status",
@@ -114,6 +114,14 @@ class ReleaseConsistencyTests(unittest.TestCase):
         self.assertIn('CANONICAL_HOME_POWER_ENTITY = "sensor.do_data_home_power"', const_source)
         self.assertIn("return CANONICAL_HOME_POWER_ENTITY", coordinator_source)
         self.assertNotIn("self.entry.options.get(\n            CONF_HOME_POWER_ENTITY", coordinator_source)
+
+    def test_gas_tariff_uses_internal_options_only(self) -> None:
+        prices_source = (ROOT / "custom_components/dummy_os_data/prices.py").read_text()
+        self.assertNotIn("GAS_VARIABLE_ADDON_ENTITY", prices_source)
+        self.assertNotIn("input_number.gas_markup_per_m3", prices_source)
+        self.assertIn("return self._num(CONF_GAS_SUPPLIER) + self._num(CONF_GAS_TAX)", prices_source)
+        self.assertIn('"gas_variable_addon_source": "dummy_os_data_options"', prices_source)
+        self.assertIn('"tariff_edit_surface": "Dummy OS Data Options"', prices_source)
 
     def test_solar_examples_reference_only_registered_entities(self) -> None:
         sensor_source = (ROOT / "custom_components/dummy_os_data/solar_sensor.py").read_text()
