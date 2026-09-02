@@ -3,10 +3,13 @@
     "step": {
       "user": {
         "title": "Dummy OS Data",
-        "description": "Select the canonical Home Power sensor used to build 15-minute historical consumption data.",
+        "description": "Select the underlying power-flow sensors used to build canonical Dummy OS Data Home Power.",
         "data": {
-          "home_power_entity": "Home power source",
-          "home_power_positive_direction": "Source sign: positive power means"
+          "grid_import_power_entity": "Grid import power source",
+          "grid_export_power_entity": "Grid export power source",
+          "data_solar_power_entity": "Solar power source",
+          "battery_charge_power_entity": "Battery charge power source",
+          "battery_discharge_power_entity": "Battery discharge power source"
         }
       }
     },
@@ -22,10 +25,13 @@
     "step": {
       "init": {
         "title": "Dummy OS Data options",
-        "description": "Configure Home, Prices and Solar sources. Solar azimuth uses the Open-Meteo convention: 0 degrees is south and +/-180 degrees is north.",
+        "description": "Configure the underlying energy flows used by Dummy OS Data, followed by Prices and Solar settings. Home Power is calculated internally from the five selected power sources.",
         "data": {
-          "home_power_entity": "Home power source",
-          "home_power_positive_direction": "Source sign: positive power means",
+          "grid_import_power_entity": "Grid import power source",
+          "grid_export_power_entity": "Grid export power source",
+          "data_solar_power_entity": "Solar power source",
+          "battery_charge_power_entity": "Battery charge power source",
+          "battery_discharge_power_entity": "Battery discharge power source",
           "tariff_profile_id": "Tariff profile ID",
           "tariff_supplier": "Energy supplier",
           "tariff_valid_from": "Tariff valid from (YYYY-MM-DD)",
