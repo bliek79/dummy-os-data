@@ -24,6 +24,7 @@ _LOGGER = logging.getLogger(__name__)
 type DummyOSDataConfigEntry = ConfigEntry[DummyOSHomeDataCoordinator]
 
 _ENTITY_ID_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
+    ("sensor", "do_data_grid_net_power", "sensor.do_data_grid_net_power"),
     ("sensor", "do_data_grid_import_power", "sensor.do_data_grid_import_power"),
     ("sensor", "do_data_grid_export_power", "sensor.do_data_grid_export_power"),
     ("sensor", "do_data_solar_power", "sensor.do_data_solar_power"),
@@ -86,9 +87,6 @@ _ENTITY_ID_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
 
 async def async_setup_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry) -> bool:
     """Set up Dummy OS Data from a config entry."""
-    # Entity-ID cleanup/migration runs before platform setup. This prevents the
-    # short-lived alpha.11.4 Home input entities from being re-created under a
-    # second generated name and makes the definitive do_data_* contract stable.
     _async_remove_obsolete_home_input_entities(hass)
     _async_migrate_generated_entity_ids(hass)
 
@@ -107,9 +105,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry) 
     entry.runtime_data = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    # Safety pass for first-time entity creation. The entity names are chosen so
-    # Home Assistant already generates sensor.do_data_*, but this catches any
-    # known automatic alias without touching user-renamed entities.
     _async_migrate_generated_entity_ids(hass)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
