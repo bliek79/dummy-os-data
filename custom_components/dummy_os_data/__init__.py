@@ -11,7 +11,10 @@ from homeassistant.helpers import entity_registry as er
 from .const import DOMAIN, PLATFORMS
 from .coordinator import DummyOSHomeDataCoordinator
 from .degree_days import DummyOSDegreeDaysCoordinator
-from .entity_migrations import is_known_generated_entity_id
+from .entity_migrations import (
+    OBSOLETE_HOME_INPUT_ENTITY_ALIASES,
+    is_known_generated_entity_id,
+)
 from .prices import DummyOSPricesCoordinator
 from .solar import DummyOSSolarCoordinator
 
@@ -21,10 +24,12 @@ _LOGGER = logging.getLogger(__name__)
 type DummyOSDataConfigEntry = ConfigEntry[DummyOSHomeDataCoordinator]
 
 _ENTITY_ID_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
-    ("sensor", "do_input_home_power_raw", "sensor.do_input_home_power_raw"),
-    ("sensor", "do_home_power", "sensor.do_home_power"),
-    ("sensor", "do_home_import_power", "sensor.do_home_import_power"),
-    ("sensor", "do_home_export_power", "sensor.do_home_export_power"),
+    ("sensor", "do_data_grid_import_power", "sensor.do_data_grid_import_power"),
+    ("sensor", "do_data_grid_export_power", "sensor.do_data_grid_export_power"),
+    ("sensor", "do_data_solar_power", "sensor.do_data_solar_power"),
+    ("sensor", "do_data_battery_charge_power", "sensor.do_data_battery_charge_power"),
+    ("sensor", "do_data_battery_discharge_power", "sensor.do_data_battery_discharge_power"),
+    ("sensor", "do_data_home_power", "sensor.do_data_home_power"),
     ("sensor", "do_home_actual_quarter", "sensor.do_home_actual_quarter"),
     ("sensor", "do_home_history_status", "sensor.do_home_history_status"),
     ("sensor", "do_home_history_days", "sensor.do_home_history_days"),
@@ -81,6 +86,12 @@ _ENTITY_ID_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
 
 async def async_setup_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry) -> bool:
     """Set up Dummy OS Data from a config entry."""
+    # Entity-ID cleanup/migration runs before platform setup. This prevents the
+    # short-lived alpha.11.4 Home input entities from being re-created under a
+    # second generated name and makes the definitive do_data_* contract stable.
+    _async_remove_obsolete_home_input_entities(hass)
+    _async_migrate_generated_entity_ids(hass)
+
     coordinator = DummyOSHomeDataCoordinator(hass, entry)
     await coordinator.async_setup()
 
@@ -96,9 +107,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry) 
     entry.runtime_data = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # Safety pass for first-time entity creation. The entity names are chosen so
+    # Home Assistant already generates sensor.do_data_*, but this catches any
+    # known automatic alias without touching user-renamed entities.
     _async_migrate_generated_entity_ids(hass)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
+
+
+def _async_remove_obsolete_home_input_entities(hass: HomeAssistant) -> None:
+    """Remove only known automatic entities from the temporary alpha.11.4 layer."""
+    registry = er.async_get(hass)
+    for unique_id in OBSOLETE_HOME_INPUT_ENTITY_ALIASES:
+        current_entity_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
+        if current_entity_id is None:
+            continue
+        if not is_known_generated_entity_id("sensor", unique_id, current_entity_id):
+            _LOGGER.warning(
+                "Preserving user-renamed obsolete Home input entity %s",
+                current_entity_id,
+            )
+            continue
+        registry.async_remove(current_entity_id)
+        _LOGGER.info("Removed obsolete Home input entity %s", current_entity_id)
 
 
 def _async_migrate_generated_entity_ids(hass: HomeAssistant) -> None:
