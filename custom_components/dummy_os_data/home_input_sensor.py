@@ -18,27 +18,14 @@ from .const import (
     CONF_BATTERY_CHARGE_POWER_ENTITY,
     CONF_BATTERY_DISCHARGE_POWER_ENTITY,
     CONF_DATA_SOLAR_POWER_ENTITY,
-    CONF_GRID_EXPORT_POWER_ENTITY,
-    CONF_GRID_IMPORT_POWER_ENTITY,
+    CONF_GRID_NET_POWER_ENTITY,
     DOMAIN,
     NAME,
     VERSION,
 )
 from .coordinator import DummyOSHomeDataCoordinator
 
-SOURCE_DEFINITIONS: tuple[tuple[str, str, str, str], ...] = (
-    (
-        CONF_GRID_IMPORT_POWER_ENTITY,
-        "do_data_grid_import_power",
-        "DO Data Grid Import Power",
-        "mdi:transmission-tower-import",
-    ),
-    (
-        CONF_GRID_EXPORT_POWER_ENTITY,
-        "do_data_grid_export_power",
-        "DO Data Grid Export Power",
-        "mdi:transmission-tower-export",
-    ),
+POSITIVE_SOURCE_DEFINITIONS: tuple[tuple[str, str, str, str], ...] = (
     (
         CONF_DATA_SOLAR_POWER_ENTITY,
         "do_data_solar_power",
@@ -60,8 +47,8 @@ SOURCE_DEFINITIONS: tuple[tuple[str, str, str, str], ...] = (
 )
 
 
-def source_power_magnitude_w(state: State | None) -> float | None:
-    """Return one positive power-flow magnitude in watts."""
+def source_power_w(state: State | None, *, allow_negative: bool) -> float | None:
+    """Return source power in watts, optionally allowing a signed value."""
     if state is None or state.state in {"unknown", "unavailable", "none", ""}:
         return None
     try:
@@ -75,10 +62,7 @@ def source_power_magnitude_w(state: State | None) -> float | None:
     elif unit not in {"W", None}:
         return None
 
-    # Separate import/export/charge/discharge sources represent magnitudes.
-    # A negative value therefore indicates invalid source semantics and must
-    # never be silently converted with abs().
-    if value < 0:
+    if not allow_negative and value < 0:
         return None
     return value
 
@@ -116,8 +100,8 @@ class DummyOSDataPowerBaseSensor(SensorEntity):
         entity_id = self._configured_entity(key)
         return self.coordinator.hass.states.get(entity_id) if entity_id else None
 
-    def _source_value(self, key: str) -> float | None:
-        return source_power_magnitude_w(self._source_state(key))
+    def _source_value(self, key: str, *, allow_negative: bool = False) -> float | None:
+        return source_power_w(self._source_state(key), allow_negative=allow_negative)
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -125,7 +109,7 @@ class DummyOSDataPowerBaseSensor(SensorEntity):
         if entities:
             self._remove_listener = async_track_state_change_event(
                 self.coordinator.hass,
-                entities,
+                list(dict.fromkeys(entities)),
                 self._handle_source_update,
             )
 
@@ -140,6 +124,85 @@ class DummyOSDataPowerBaseSensor(SensorEntity):
 
     def _source_entities(self) -> list[tuple[str, str | None]]:
         raise NotImplementedError
+
+
+class DummyOSDataGridNetPowerSensor(DummyOSDataPowerBaseSensor):
+    """Canonical signed grid power: positive import, negative export."""
+
+    _attr_name = "DO Data Grid Net Power"
+    _attr_unique_id = "do_data_grid_net_power"
+    _attr_suggested_object_id = "do_data_grid_net_power"
+    _attr_icon = "mdi:transmission-tower"
+
+    def _source_entities(self) -> list[tuple[str, str | None]]:
+        return [(CONF_GRID_NET_POWER_ENTITY, self._configured_entity(CONF_GRID_NET_POWER_ENTITY))]
+
+    @property
+    def available(self) -> bool:
+        return self._source_value(CONF_GRID_NET_POWER_ENTITY, allow_negative=True) is not None
+
+    @property
+    def native_value(self) -> float | None:
+        value = self._source_value(CONF_GRID_NET_POWER_ENTITY, allow_negative=True)
+        return round(value, 3) if value is not None else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        entity_id = self._configured_entity(CONF_GRID_NET_POWER_ENTITY)
+        state = self._source_state(CONF_GRID_NET_POWER_ENTITY)
+        return {
+            "source_entity": entity_id,
+            "source_unit": state.attributes.get("unit_of_measurement") if state else None,
+            "source_state": state.state if state else None,
+            "source_available": self.available,
+            "sign_convention": "positive_import_negative_export",
+            "normalization": "unit_to_w_sign_preserved",
+        }
+
+
+class DummyOSDataGridSplitPowerSensor(DummyOSDataPowerBaseSensor):
+    """Positive import or export magnitude derived from the signed grid source."""
+
+    def __init__(self, coordinator: DummyOSHomeDataCoordinator, *, export: bool) -> None:
+        super().__init__(coordinator)
+        self.export = export
+        if export:
+            self._attr_name = "DO Data Grid Export Power"
+            self._attr_unique_id = "do_data_grid_export_power"
+            self._attr_suggested_object_id = "do_data_grid_export_power"
+            self._attr_icon = "mdi:transmission-tower-export"
+        else:
+            self._attr_name = "DO Data Grid Import Power"
+            self._attr_unique_id = "do_data_grid_import_power"
+            self._attr_suggested_object_id = "do_data_grid_import_power"
+            self._attr_icon = "mdi:transmission-tower-import"
+
+    def _source_entities(self) -> list[tuple[str, str | None]]:
+        return [(CONF_GRID_NET_POWER_ENTITY, self._configured_entity(CONF_GRID_NET_POWER_ENTITY))]
+
+    def _grid_net(self) -> float | None:
+        return self._source_value(CONF_GRID_NET_POWER_ENTITY, allow_negative=True)
+
+    @property
+    def available(self) -> bool:
+        return self._grid_net() is not None
+
+    @property
+    def native_value(self) -> float | None:
+        value = self._grid_net()
+        if value is None:
+            return None
+        result = max(-value, 0.0) if self.export else max(value, 0.0)
+        return round(result, 3)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {
+            "source_entity": self._configured_entity(CONF_GRID_NET_POWER_ENTITY),
+            "source_available": self.available,
+            "derived_from": "sensor.do_data_grid_net_power",
+            "formula": "max(-grid_net, 0)" if self.export else "max(grid_net, 0)",
+        }
 
 
 class DummyOSDataSourcePowerSensor(DummyOSDataPowerBaseSensor):
@@ -176,11 +239,10 @@ class DummyOSDataSourcePowerSensor(DummyOSDataPowerBaseSensor):
     def extra_state_attributes(self) -> dict[str, Any]:
         entity_id = self._configured_entity(self.config_key)
         state = self._source_state(self.config_key)
-        raw_state = state.state if state is not None else None
         return {
             "source_entity": entity_id,
             "source_unit": state.attributes.get("unit_of_measurement") if state else None,
-            "source_state": raw_state,
+            "source_state": state.state if state else None,
             "source_available": self.available,
             "normalization": "positive_power_magnitude_to_w",
             "negative_source_values_allowed": False,
@@ -197,14 +259,19 @@ class DummyOSDataHomePowerSensor(DummyOSDataPowerBaseSensor):
 
     def _source_entities(self) -> list[tuple[str, str | None]]:
         return [
-            (key, self._configured_entity(key))
-            for key, _, _, _ in SOURCE_DEFINITIONS
+            (CONF_GRID_NET_POWER_ENTITY, self._configured_entity(CONF_GRID_NET_POWER_ENTITY)),
+            *[(key, self._configured_entity(key)) for key, _, _, _ in POSITIVE_SOURCE_DEFINITIONS],
         ]
 
     def _values(self) -> dict[str, float | None]:
+        grid_net = self._source_value(CONF_GRID_NET_POWER_ENTITY, allow_negative=True)
         return {
-            key: self._source_value(key)
-            for key, _, _, _ in SOURCE_DEFINITIONS
+            "grid_net": grid_net,
+            "grid_import": max(grid_net, 0.0) if grid_net is not None else None,
+            "grid_export": max(-grid_net, 0.0) if grid_net is not None else None,
+            "solar": self._source_value(CONF_DATA_SOLAR_POWER_ENTITY),
+            "battery_charge": self._source_value(CONF_BATTERY_CHARGE_POWER_ENTITY),
+            "battery_discharge": self._source_value(CONF_BATTERY_DISCHARGE_POWER_ENTITY),
         }
 
     @property
@@ -216,24 +283,12 @@ class DummyOSDataHomePowerSensor(DummyOSDataPowerBaseSensor):
         values = self._values()
         if any(value is None for value in values.values()):
             return None
-
-        grid_import = values[CONF_GRID_IMPORT_POWER_ENTITY]
-        grid_export = values[CONF_GRID_EXPORT_POWER_ENTITY]
-        solar = values[CONF_DATA_SOLAR_POWER_ENTITY]
-        battery_charge = values[CONF_BATTERY_CHARGE_POWER_ENTITY]
-        battery_discharge = values[CONF_BATTERY_DISCHARGE_POWER_ENTITY]
-        assert grid_import is not None
-        assert grid_export is not None
-        assert solar is not None
-        assert battery_charge is not None
-        assert battery_discharge is not None
-
         home_power = (
-            solar
-            + grid_import
-            + battery_discharge
-            - grid_export
-            - battery_charge
+            values["solar"]
+            + values["grid_import"]
+            + values["battery_discharge"]
+            - values["grid_export"]
+            - values["battery_charge"]
         )
         return round(home_power, 3)
 
@@ -243,9 +298,12 @@ class DummyOSDataHomePowerSensor(DummyOSDataPowerBaseSensor):
         missing = [key for key, value in values.items() if value is None]
         return {
             "formula": "solar + grid_import + battery_discharge - grid_export - battery_charge",
+            "grid_split": "grid_import=max(grid_net,0); grid_export=max(-grid_net,0)",
             "source_entities": {
-                key: self._configured_entity(key)
-                for key, _, _, _ in SOURCE_DEFINITIONS
+                "grid_net": self._configured_entity(CONF_GRID_NET_POWER_ENTITY),
+                "solar": self._configured_entity(CONF_DATA_SOLAR_POWER_ENTITY),
+                "battery_charge": self._configured_entity(CONF_BATTERY_CHARGE_POWER_ENTITY),
+                "battery_discharge": self._configured_entity(CONF_BATTERY_DISCHARGE_POWER_ENTITY),
             },
             "source_values_w": values,
             "missing_sources": missing,
@@ -260,6 +318,11 @@ def build_home_input_sensors(
 ) -> list[SensorEntity]:
     """Build the definitive canonical Data energy-flow sensor set."""
     entities: list[SensorEntity] = [
+        DummyOSDataGridNetPowerSensor(coordinator),
+        DummyOSDataGridSplitPowerSensor(coordinator, export=False),
+        DummyOSDataGridSplitPowerSensor(coordinator, export=True),
+    ]
+    entities.extend(
         DummyOSDataSourcePowerSensor(
             coordinator,
             config_key,
@@ -267,7 +330,7 @@ def build_home_input_sensors(
             name,
             icon,
         )
-        for config_key, object_id, name, icon in SOURCE_DEFINITIONS
-    ]
+        for config_key, object_id, name, icon in POSITIVE_SOURCE_DEFINITIONS
+    )
     entities.append(DummyOSDataHomePowerSensor(coordinator))
     return entities

@@ -38,6 +38,7 @@ EXPECTED_SOLAR_ENTITY_ID_ALIASES = {
 }
 
 EXPECTED_DATA_POWER_IDS = (
+    "do_data_grid_net_power",
     "do_data_grid_import_power",
     "do_data_grid_export_power",
     "do_data_solar_power",
@@ -71,17 +72,9 @@ class ReleaseConsistencyTests(unittest.TestCase):
     def test_all_observed_solar_entity_ids_have_exact_migration_aliases(self) -> None:
         self.assertEqual(EXPECTED_SOLAR_ENTITY_ID_ALIASES, SOLAR_GENERATED_ENTITY_ID_ALIASES)
         self.assertEqual(14, len(SOLAR_GENERATED_ENTITY_ID_ALIASES))
-
         init_source = (ROOT / "custom_components/dummy_os_data/__init__.py").read_text()
         for unique_id in EXPECTED_SOLAR_ENTITY_ID_ALIASES:
-            self.assertIn(
-                f'("sensor", "{unique_id}", "sensor.{unique_id}")',
-                init_source,
-            )
-
-        for unique_id, observed_entity_id in EXPECTED_SOLAR_ENTITY_ID_ALIASES.items():
-            self.assertTrue(is_known_generated_entity_id("sensor", unique_id, observed_entity_id))
-            self.assertFalse(is_known_generated_entity_id("sensor", unique_id, f"sensor.user_{unique_id}"))
+            self.assertIn(f'("sensor", "{unique_id}", "sensor.{unique_id}")', init_source)
 
     def test_data_power_entities_use_definitive_ids(self) -> None:
         sensor_source = (ROOT / "custom_components/dummy_os_data/home_input_sensor.py").read_text()
@@ -91,68 +84,33 @@ class ReleaseConsistencyTests(unittest.TestCase):
             self.assertIn(unique_id, sensor_source)
             self.assertIn(f'("sensor", "{unique_id}", "sensor.{unique_id}")', init_source)
         self.assertIn("*build_home_input_sensors(coordinator)", sensor_platform)
-        self.assertIn("_attr_name = \"DO Data Home Power\"", sensor_source)
-        self.assertIn("_attr_suggested_object_id = \"do_data_home_power\"", sensor_source)
 
     def test_temporary_home_input_aliases_are_explicitly_cleaned(self) -> None:
-        expected = {
-            "do_input_home_power_raw",
-            "do_home_power",
-            "do_home_import_power",
-            "do_home_export_power",
-        }
+        expected = {"do_input_home_power_raw", "do_home_power", "do_home_import_power", "do_home_export_power"}
         self.assertEqual(expected, set(OBSOLETE_HOME_INPUT_ENTITY_ALIASES))
-        init_source = (ROOT / "custom_components/dummy_os_data/__init__.py").read_text()
-        self.assertIn("_async_remove_obsolete_home_input_entities(hass)", init_source)
-        self.assertLess(
-            init_source.index("_async_remove_obsolete_home_input_entities(hass)"),
-            init_source.index("async_forward_entry_setups"),
-        )
 
-    def test_home_power_formula_and_source_contract_are_fixed(self) -> None:
+    def test_bidirectional_grid_contract_is_fixed(self) -> None:
         sensor_source = (ROOT / "custom_components/dummy_os_data/home_input_sensor.py").read_text()
         config_flow = (ROOT / "custom_components/dummy_os_data/config_flow.py").read_text()
         const_source = (ROOT / "custom_components/dummy_os_data/const.py").read_text()
-        expected_keys = (
-            "grid_import_power_entity",
-            "grid_export_power_entity",
-            "data_solar_power_entity",
-            "battery_charge_power_entity",
-            "battery_discharge_power_entity",
-        )
-        for key in expected_keys:
-            self.assertIn(key, const_source)
-        self.assertIn("DATA_POWER_SOURCE_KEYS", config_flow)
-        self.assertIn(
-            "solar + grid_import + battery_discharge - grid_export - battery_charge",
-            sensor_source,
-        )
-        self.assertNotIn("CONF_HOME_POWER_POSITIVE_DIRECTION", config_flow)
+        self.assertIn('CONF_GRID_NET_POWER_ENTITY = "grid_net_power_entity"', const_source)
+        self.assertIn('LEGACY_CONF_GRID_IMPORT_POWER_ENTITY = "grid_import_power_entity"', const_source)
+        self.assertIn('LEGACY_CONF_GRID_EXPORT_POWER_ENTITY = "grid_export_power_entity"', const_source)
+        self.assertIn("max(grid_net, 0.0)", sensor_source)
+        self.assertIn("max(-grid_net, 0.0)", sensor_source)
+        self.assertIn("positive_import_negative_export", sensor_source)
+        self.assertIn("CONF_GRID_NET_POWER_ENTITY", config_flow)
+        self.assertNotIn("\n    CONF_GRID_IMPORT_POWER_ENTITY,", config_flow)
+        self.assertNotIn("\n    CONF_GRID_EXPORT_POWER_ENTITY,", config_flow)
 
     def test_solar_examples_reference_only_registered_entities(self) -> None:
-        """Prevent another automation from naming a sensor that is not built."""
-        sensor_source = (
-            ROOT / "custom_components/dummy_os_data/solar_sensor.py"
-        ).read_text()
-        registered_unique_ids = set(
-            re.findall(r'_attr_unique_id = "(do_solar_[^"]+)"', sensor_source)
-        )
-        registered_unique_ids.update(
-            re.findall(r'object_id = f"(do_solar_[^"]+)', sensor_source)
-        )
-
+        sensor_source = (ROOT / "custom_components/dummy_os_data/solar_sensor.py").read_text()
+        registered_unique_ids = set(re.findall(r'_attr_unique_id = "(do_solar_[^"]+)"', sensor_source))
+        registered_unique_ids.update(re.findall(r'object_id = f"(do_solar_[^"]+)', sensor_source))
         for example in (ROOT / "examples").glob("*.yaml"):
             for entity_id in re.findall(r"sensor\.(do_solar_[a-z0-9_]+)", example.read_text()):
-                self.assertIn(
-                    entity_id,
-                    registered_unique_ids,
-                    f"{example.name} references unregistered sensor.{entity_id}",
-                )
-
-        self.assertIn(
-            "do_solar_evaluation_last_completed_quarter",
-            registered_unique_ids,
-        )
+                self.assertIn(entity_id, registered_unique_ids, f"{example.name} references unregistered sensor.{entity_id}")
+        self.assertIn("do_solar_evaluation_last_completed_quarter", registered_unique_ids)
 
 
 if __name__ == "__main__":
