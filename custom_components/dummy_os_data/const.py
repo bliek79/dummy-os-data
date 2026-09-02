@@ -6,10 +6,11 @@ DOMAIN = "dummy_os_data"
 NAME = "Dummy OS"
 VERSION = "0.1.0-alpha.11.7"
 
-# Legacy Home Forecast source. Existing installations keep using this source
-# until the new canonical Data input layer has been live-validated.
+# Legacy Home Forecast source key retained for config-entry compatibility only.
+# Home Forecast production now always consumes the canonical Data Home Power entity.
 CONF_HOME_POWER_ENTITY = "home_power_entity"
 DEFAULT_HOME_POWER_ENTITY = "sensor.home_power"
+CANONICAL_HOME_POWER_ENTITY = "sensor.do_data_home_power"
 CONF_HOME_POWER_POSITIVE_DIRECTION = "home_power_positive_direction"
 HOME_POWER_POSITIVE_CONSUMPTION = "consumption"
 HOME_POWER_POSITIVE_EXPORT = "export"
