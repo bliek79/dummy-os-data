@@ -3,10 +3,9 @@
     "step": {
       "user": {
         "title": "Dummy OS Data",
-        "description": "Selecteer de onderliggende vermogensstromen waarmee Dummy OS Data zelf het canonieke woningvermogen opbouwt.",
+        "description": "Selecteer de onderliggende vermogensbronnen waarmee Dummy OS Data zelf het canonieke woningvermogen opbouwt. Netvermogen gebruikt één bidirectionele bron: positief = afname, negatief = teruglevering.",
         "data": {
-          "grid_import_power_entity": "Bron netafnamevermogen",
-          "grid_export_power_entity": "Bron terugleververmogen",
+          "grid_net_power_entity": "Bron netto netvermogen (positief afname, negatief teruglevering)",
           "data_solar_power_entity": "Bron solarvermogen",
           "battery_charge_power_entity": "Bron batterij laadvermogen",
           "battery_discharge_power_entity": "Bron batterij ontlaadvermogen"
@@ -25,10 +24,9 @@
     "step": {
       "init": {
         "title": "Dummy OS Data-opties",
-        "description": "Configureer eerst de onderliggende energiestromen die Dummy OS Data gebruikt. Het woningvermogen wordt intern berekend uit de vijf geselecteerde vermogensbronnen. Daarna volgen Prijzen en Solar.",
+        "description": "Configureer vier onderliggende energiebronnen. Netvermogen is één bidirectionele sensor: positief = afname en negatief = teruglevering. Dummy OS Data splitst dit intern naar import/export en berekent daarna woningvermogen. Daarna volgen Prijzen en Solar.",
         "data": {
-          "grid_import_power_entity": "Bron netafnamevermogen",
-          "grid_export_power_entity": "Bron terugleververmogen",
+          "grid_net_power_entity": "Bron netto netvermogen (positief afname, negatief teruglevering)",
           "data_solar_power_entity": "Bron solarvermogen",
           "battery_charge_power_entity": "Bron batterij laadvermogen",
           "battery_discharge_power_entity": "Bron batterij ontlaadvermogen",
