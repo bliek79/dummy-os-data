@@ -4,10 +4,17 @@ from __future__ import annotations
 
 DOMAIN = "dummy_os_data"
 NAME = "Dummy OS"
-VERSION = "0.1.0-alpha.11.3"
+VERSION = "0.1.0-alpha.11.4"
 
 CONF_HOME_POWER_ENTITY = "home_power_entity"
 DEFAULT_HOME_POWER_ENTITY = "sensor.home_power"
+CONF_HOME_POWER_POSITIVE_DIRECTION = "home_power_positive_direction"
+HOME_POWER_POSITIVE_CONSUMPTION = "consumption"
+HOME_POWER_POSITIVE_EXPORT = "export"
+HOME_POWER_POSITIVE_DIRECTION_OPTIONS = [
+    HOME_POWER_POSITIVE_CONSUMPTION,
+    HOME_POWER_POSITIVE_EXPORT,
+]
 
 CONF_TARIFF_PROFILE_ID = "tariff_profile_id"
 CONF_TARIFF_SUPPLIER = "tariff_supplier"

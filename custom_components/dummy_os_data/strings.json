@@ -5,7 +5,8 @@
         "title": "Dummy OS Data",
         "description": "Select the canonical Home Power sensor used to build 15-minute historical consumption data.",
         "data": {
-          "home_power_entity": "Home power source"
+          "home_power_entity": "Home power source",
+          "home_power_positive_direction": "Source sign: positive power means"
         }
       }
     },
@@ -24,6 +25,7 @@
         "description": "Configure Home, Prices and Solar sources. Solar azimuth uses the Open-Meteo convention: 0 degrees is south and +/-180 degrees is north.",
         "data": {
           "home_power_entity": "Home power source",
+          "home_power_positive_direction": "Source sign: positive power means",
           "tariff_profile_id": "Tariff profile ID",
           "tariff_supplier": "Energy supplier",
           "tariff_valid_from": "Tariff valid from (YYYY-MM-DD)",

@@ -21,6 +21,10 @@ _LOGGER = logging.getLogger(__name__)
 type DummyOSDataConfigEntry = ConfigEntry[DummyOSHomeDataCoordinator]
 
 _ENTITY_ID_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
+    ("sensor", "do_input_home_power_raw", "sensor.do_input_home_power_raw"),
+    ("sensor", "do_home_power", "sensor.do_home_power"),
+    ("sensor", "do_home_import_power", "sensor.do_home_import_power"),
+    ("sensor", "do_home_export_power", "sensor.do_home_export_power"),
     ("sensor", "do_home_actual_quarter", "sensor.do_home_actual_quarter"),
     ("sensor", "do_home_history_status", "sensor.do_home_history_status"),
     ("sensor", "do_home_history_days", "sensor.do_home_history_days"),
