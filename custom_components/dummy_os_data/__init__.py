@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN, PLATFORMS
@@ -85,6 +85,18 @@ _ENTITY_ID_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
 )
 
 
+def _is_obsolete_home_input_state(state: State | None) -> bool:
+    """Return whether a state has the exact temporary alpha.11.4 signature."""
+    if state is None:
+        return False
+    attrs = state.attributes
+    return (
+        attrs.get("canonical_sign") == "positive_consumption_negative_export"
+        and isinstance(attrs.get("source_entity"), str)
+        and "source_available" in attrs
+    )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry) -> bool:
     """Set up Dummy OS Data from a config entry."""
     _async_remove_obsolete_home_input_entities(hass)
@@ -106,25 +118,51 @@ async def async_setup_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry) 
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _async_migrate_generated_entity_ids(hass)
+    # A platform reload can leave a state-machine entry alive after its entity
+    # registry entry has already been removed. Run cleanup again after setup so
+    # those exact temporary alpha.11.4 states disappear immediately as well.
+    _async_remove_obsolete_home_input_entities(hass)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
 
 
 def _async_remove_obsolete_home_input_entities(hass: HomeAssistant) -> None:
-    """Remove only known automatic entities from the temporary alpha.11.4 layer."""
+    """Remove known automatic alpha.11.4 entities and their stale HA states."""
     registry = er.async_get(hass)
-    for unique_id in OBSOLETE_HOME_INPUT_ENTITY_ALIASES:
-        current_entity_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
-        if current_entity_id is None:
-            continue
-        if not is_known_generated_entity_id("sensor", unique_id, current_entity_id):
-            _LOGGER.warning(
-                "Preserving user-renamed obsolete Home input entity %s",
-                current_entity_id,
-            )
-            continue
-        registry.async_remove(current_entity_id)
-        _LOGGER.info("Removed obsolete Home input entity %s", current_entity_id)
+
+    for unique_id, aliases in OBSOLETE_HOME_INPUT_ENTITY_ALIASES.items():
+        registered_entity_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
+
+        # First handle the actual registry entity, if it still exists. Only an
+        # explicitly known generated entity ID is removed; user-renamed entities
+        # are deliberately preserved.
+        if registered_entity_id is not None:
+            if is_known_generated_entity_id("sensor", unique_id, registered_entity_id):
+                registry.async_remove(registered_entity_id)
+                hass.states.async_remove(registered_entity_id)
+                _LOGGER.info(
+                    "Removed obsolete Home input entity and state %s",
+                    registered_entity_id,
+                )
+            else:
+                _LOGGER.warning(
+                    "Preserving user-renamed obsolete Home input entity %s",
+                    registered_entity_id,
+                )
+
+        # If a previous reload already removed the registry record, Home
+        # Assistant can still retain the old state in the state machine. Remove
+        # only exact known alpha.11.4 aliases that also carry the old signature.
+        for alias_entity_id in aliases:
+            if alias_entity_id == registered_entity_id:
+                continue
+            if registry.async_get(alias_entity_id) is not None:
+                continue
+            state = hass.states.get(alias_entity_id)
+            if not _is_obsolete_home_input_state(state):
+                continue
+            hass.states.async_remove(alias_entity_id)
+            _LOGGER.info("Removed stale obsolete Home input state %s", alias_entity_id)
 
 
 def _async_migrate_generated_entity_ids(hass: HomeAssistant) -> None:
