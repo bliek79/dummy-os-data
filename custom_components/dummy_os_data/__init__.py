@@ -51,9 +51,10 @@ _IDENTITY_MIGRATIONS: tuple[tuple[str, str, str, str], ...] = (
     ("select", "do_home_profile", "do_energy_profile", "select.do_energy_profile"),
 )
 
-# Direct runtime states from the old Degree Days publisher. The canonical
-# alpha.12 SensorEntity layer overwrites the six matching IDs; the four old
-# weighted/heat aliases must be removed explicitly during an integration reload.
+# Direct runtime states from the old Degree Days publisher. Alpha.12.1 removes
+# them both before and after platform setup, because restored/stale states can
+# otherwise reserve the desired canonical entity IDs while SensorEntity rows are
+# being registered.
 _DEGREE_DAYS_RUNTIME_STATE_ALIASES: tuple[str, ...] = (
     "sensor.do_degree_days_status",
     "sensor.do_degree_days_history_days",
@@ -67,8 +68,10 @@ _DEGREE_DAYS_RUNTIME_STATE_ALIASES: tuple[str, ...] = (
     "sensor.do_heat_degree_days_last_day",
 )
 
-# Stable namespaces still keep deterministic canonical entity IDs for older
-# automatically generated aliases from previous alphas.
+# Stable namespaces keep deterministic canonical entity IDs for automatically
+# generated aliases from previous alphas. Degree Days is included explicitly so
+# alpha.12 registrations such as sensor.dummy_os_forecast_do_degree_days_* are
+# migrated in-place to the agreed sensor.do_degree_days_* IDs.
 _ENTITY_ID_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("sensor", "do_weather_temperature", "sensor.do_weather_temperature"),
     ("sensor", "do_weather_apparent_temperature", "sensor.do_weather_apparent_temperature"),
@@ -98,6 +101,16 @@ _ENTITY_ID_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("sensor", "do_solar_actual_power_total", "sensor.do_solar_actual_power_total"),
     ("sensor", "do_solar_evaluation_last_completed_quarter", "sensor.do_solar_evaluation_last_completed_quarter"),
     ("sensor", "do_solar_model", "sensor.do_solar_model"),
+    ("sensor", "do_degree_days_status", "sensor.do_degree_days_status"),
+    ("sensor", "do_degree_days_history_days", "sensor.do_degree_days_history_days"),
+    ("sensor", "do_degree_days_temperature_daily", "sensor.do_degree_days_temperature_daily"),
+    ("sensor", "do_degree_days_daily", "sensor.do_degree_days_daily"),
+    ("sensor", "do_degree_days_weighted_daily", "sensor.do_degree_days_weighted_daily"),
+    ("sensor", "do_degree_days_reference_daily", "sensor.do_degree_days_reference_daily"),
+    ("sensor", "do_degree_days_weighted_reference_daily", "sensor.do_degree_days_weighted_reference_daily"),
+    ("sensor", "do_degree_days_difference", "sensor.do_degree_days_difference"),
+    ("sensor", "do_degree_days_weighted_difference", "sensor.do_degree_days_weighted_difference"),
+    ("sensor", "do_degree_days_last_day", "sensor.do_degree_days_last_day"),
 )
 
 
@@ -138,6 +151,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry) 
     entry.runtime_data = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    _async_remove_degree_days_runtime_states(hass)
     _async_migrate_generated_entity_ids(hass)
     _async_remove_obsolete_home_input_entities(hass)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
@@ -244,6 +258,7 @@ def _async_migrate_generated_entity_ids(hass: HomeAssistant) -> None:
             continue
 
         registry.async_update_entity(current_entity_id, new_entity_id=target_entity_id)
+        hass.states.async_remove(current_entity_id)
         _LOGGER.info("Migrated entity ID %s to %s", current_entity_id, target_entity_id)
 
 
