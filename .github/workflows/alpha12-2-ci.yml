@@ -1,0 +1,27 @@
+name: Alpha 12.2 CI
+
+on:
+  push:
+    branches:
+      - fix/alpha12-2-degree-days-aliases
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Compile integration
+        run: python -m compileall -q custom_components/dummy_os_data
+      - name: Run tests
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
