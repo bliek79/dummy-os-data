@@ -1,9 +1,9 @@
-"""Release metadata consistency checks."""
+"""Release metadata and alpha.12 naming/registry consistency checks."""
 
 from __future__ import annotations
 
-import json
 import importlib.util
+import json
 from pathlib import Path
 import re
 import unittest
@@ -16,9 +16,8 @@ MIGRATION_MODULE = importlib.util.module_from_spec(MIGRATION_SPEC)
 MIGRATION_SPEC.loader.exec_module(MIGRATION_MODULE)
 SOLAR_GENERATED_ENTITY_ID_ALIASES = MIGRATION_MODULE.SOLAR_GENERATED_ENTITY_ID_ALIASES
 OBSOLETE_HOME_INPUT_ENTITY_ALIASES = MIGRATION_MODULE.OBSOLETE_HOME_INPUT_ENTITY_ALIASES
-is_known_generated_entity_id = MIGRATION_MODULE.is_known_generated_entity_id
 
-VERSION = "0.1.0-alpha.11.11"
+VERSION = "0.1.0-alpha.12"
 
 EXPECTED_SOLAR_ENTITY_ID_ALIASES = {
     "do_solar_status": "sensor.dummy_os_solar_source_status",
@@ -37,14 +36,44 @@ EXPECTED_SOLAR_ENTITY_ID_ALIASES = {
     "do_solar_model": "sensor.dummy_os_solar_forecast_model",
 }
 
-EXPECTED_DATA_POWER_IDS = (
-    "do_data_grid_net_power",
-    "do_data_grid_import_power",
-    "do_data_grid_export_power",
-    "do_data_solar_power",
-    "do_data_battery_charge_power",
-    "do_data_battery_discharge_power",
-    "do_data_home_power",
+EXPECTED_SOURCE_IDS = (
+    "do_source_grid_net_power",
+    "do_source_grid_import_power",
+    "do_source_grid_export_power",
+    "do_source_solar_power",
+    "do_source_battery_charge_power",
+    "do_source_battery_discharge_power",
+    "do_source_home_power",
+)
+
+EXPECTED_ENERGY_IDS = (
+    "do_energy_actual_quarter",
+    "do_energy_history_status",
+    "do_energy_history_days",
+    "do_energy_forecast_model",
+    "do_energy_forecast",
+    "do_energy_forecast_timeline",
+    "do_energy_forecast_next_quarter",
+    "do_energy_forecast_coverage",
+    "do_energy_forecast_confidence",
+    "do_energy_forecast_model_health",
+    "do_energy_forecast_accuracy",
+    "do_energy_forecast_mae",
+    "do_energy_forecast_bias",
+    "do_energy_forecast_evaluation_samples",
+)
+
+EXPECTED_DEGREE_DAYS_IDS = (
+    "do_degree_days_status",
+    "do_degree_days_history_days",
+    "do_degree_days_temperature_daily",
+    "do_degree_days_daily",
+    "do_degree_days_weighted_daily",
+    "do_degree_days_reference_daily",
+    "do_degree_days_weighted_reference_daily",
+    "do_degree_days_difference",
+    "do_degree_days_weighted_difference",
+    "do_degree_days_last_day",
 )
 
 
@@ -54,9 +83,12 @@ class ReleaseConsistencyTests(unittest.TestCase):
         const = (ROOT / "custom_components/dummy_os_data/const.py").read_text()
         notes = (ROOT / "RELEASE_NOTES.md").read_text()
         self.assertEqual(manifest["version"], VERSION)
+        self.assertEqual(manifest["domain"], "dummy_os_data")
+        self.assertEqual(manifest["name"], "Dummy OS Forecast")
+        self.assertIn('NAME = "Dummy OS Forecast"', const)
         self.assertIn(f'VERSION = "{VERSION}"', const)
         self.assertIn(f"**Tag:** `{VERSION}`", notes)
-        self.assertIn(f"## Dummy OS Data {VERSION}", notes)
+        self.assertIn(f"## Dummy OS Forecast {VERSION}", notes)
 
     def test_translation_key_sets_match(self) -> None:
         strings = json.loads((ROOT / "custom_components/dummy_os_data/strings.json").read_text())
@@ -68,31 +100,78 @@ class ReleaseConsistencyTests(unittest.TestCase):
         expected_config = set(strings["config"]["step"]["user"]["data"])
         self.assertEqual(expected_config, set(english["config"]["step"]["user"]["data"]))
         self.assertEqual(expected_config, set(dutch["config"]["step"]["user"]["data"]))
+        self.assertEqual(strings["config"]["step"]["user"]["title"], "Dummy OS Forecast")
+        self.assertEqual(dutch["options"]["step"]["init"]["title"], "Dummy OS Forecast-opties")
 
-    def test_all_observed_solar_entity_ids_have_exact_migration_aliases(self) -> None:
-        self.assertEqual(EXPECTED_SOLAR_ENTITY_ID_ALIASES, SOLAR_GENERATED_ENTITY_ID_ALIASES)
-        self.assertEqual(14, len(SOLAR_GENERATED_ENTITY_ID_ALIASES))
-        init_source = (ROOT / "custom_components/dummy_os_data/__init__.py").read_text()
-        for unique_id in EXPECTED_SOLAR_ENTITY_ID_ALIASES:
-            self.assertIn(f'("sensor", "{unique_id}", "sensor.{unique_id}")', init_source)
-
-    def test_data_power_entities_use_definitive_ids(self) -> None:
+    def test_source_namespace_is_complete_and_canonical(self) -> None:
         sensor_source = (ROOT / "custom_components/dummy_os_data/home_input_sensor.py").read_text()
         init_source = (ROOT / "custom_components/dummy_os_data/__init__.py").read_text()
-        sensor_platform = (ROOT / "custom_components/dummy_os_data/sensor.py").read_text()
-        for unique_id in EXPECTED_DATA_POWER_IDS:
+        const_source = (ROOT / "custom_components/dummy_os_data/const.py").read_text()
+        coordinator_source = (ROOT / "custom_components/dummy_os_data/coordinator.py").read_text()
+        for unique_id in EXPECTED_SOURCE_IDS:
             self.assertIn(unique_id, sensor_source)
-            self.assertIn(f'("sensor", "{unique_id}", "sensor.{unique_id}")', init_source)
-        self.assertIn("*build_home_input_sensors(coordinator)", sensor_platform)
+        self.assertIn('CANONICAL_HOME_POWER_ENTITY = "sensor.do_source_home_power"', const_source)
+        self.assertIn("return CANONICAL_HOME_POWER_ENTITY", coordinator_source)
+        self.assertIn('("sensor", "do_data_home_power", "do_source_home_power", "sensor.do_source_home_power")', init_source)
+        self.assertNotIn('_attr_unique_id = "do_data_', sensor_source)
 
-    def test_temporary_home_input_aliases_are_explicitly_cleaned(self) -> None:
-        expected = {"do_input_home_power_raw", "do_home_power", "do_home_import_power", "do_home_export_power"}
-        self.assertEqual(expected, set(OBSOLETE_HOME_INPUT_ENTITY_ALIASES))
+    def test_energy_namespace_contains_exact_public_sensor_ids(self) -> None:
+        sensor_source = (ROOT / "custom_components/dummy_os_data/sensor.py").read_text()
         init_source = (ROOT / "custom_components/dummy_os_data/__init__.py").read_text()
-        self.assertIn("hass.states.async_remove(registered_entity_id)", init_source)
-        self.assertIn("hass.states.async_remove(alias_entity_id)", init_source)
-        self.assertIn("_is_obsolete_home_input_state", init_source)
-        self.assertGreaterEqual(init_source.count("_async_remove_obsolete_home_input_entities(hass)"), 2)
+        select_source = (ROOT / "custom_components/dummy_os_data/select.py").read_text()
+        for unique_id in EXPECTED_ENERGY_IDS:
+            self.assertIn(f'_attr_unique_id = "{unique_id}"', sensor_source)
+        self.assertEqual(14, sum(sensor_source.count(f'_attr_unique_id = "{unique_id}"') for unique_id in EXPECTED_ENERGY_IDS))
+        self.assertIn('_attr_unique_id = "do_energy_profile"', select_source)
+        self.assertIn('_attr_name = "DO Energy Profile"', select_source)
+        self.assertIn('("select", "do_home_profile", "do_energy_profile", "select.do_energy_profile")', init_source)
+        self.assertNotIn('_attr_unique_id = "do_home_', sensor_source)
+        self.assertNotIn('_attr_unique_id = "do_home_profile"', select_source)
+
+    def test_degree_days_are_registered_sensor_entities(self) -> None:
+        degree_source = (ROOT / "custom_components/dummy_os_data/degree_days.py").read_text()
+        entity_source = (ROOT / "custom_components/dummy_os_data/degree_days_sensor.py").read_text()
+        sensor_platform = (ROOT / "custom_components/dummy_os_data/sensor.py").read_text()
+        init_source = (ROOT / "custom_components/dummy_os_data/__init__.py").read_text()
+        for unique_id in EXPECTED_DEGREE_DAYS_IDS:
+            self.assertIn(unique_id, entity_source)
+        self.assertIn("*build_degree_days_sensors(coordinator)", sensor_platform)
+        self.assertNotIn("hass.states.async_set", degree_source)
+        self.assertIn("_DEGREE_DAYS_RUNTIME_STATE_ALIASES", init_source)
+        self.assertIn('"sensor.do_weighted_degree_days_daily"', init_source)
+        self.assertIn('"sensor.do_heat_degree_days_last_day"', init_source)
+
+    def test_identity_migrations_cover_all_source_energy_and_profile_entities(self) -> None:
+        init_source = (ROOT / "custom_components/dummy_os_data/__init__.py").read_text()
+        source_pairs = {
+            "do_data_grid_net_power": "do_source_grid_net_power",
+            "do_data_grid_import_power": "do_source_grid_import_power",
+            "do_data_grid_export_power": "do_source_grid_export_power",
+            "do_data_solar_power": "do_source_solar_power",
+            "do_data_battery_charge_power": "do_source_battery_charge_power",
+            "do_data_battery_discharge_power": "do_source_battery_discharge_power",
+            "do_data_home_power": "do_source_home_power",
+        }
+        energy_pairs = {
+            "do_home_actual_quarter": "do_energy_actual_quarter",
+            "do_home_history_status": "do_energy_history_status",
+            "do_home_history_days": "do_energy_history_days",
+            "do_home_forecast_model": "do_energy_forecast_model",
+            "do_home_forecast": "do_energy_forecast",
+            "do_home_forecast_timeline": "do_energy_forecast_timeline",
+            "do_home_forecast_next_quarter": "do_energy_forecast_next_quarter",
+            "do_home_forecast_coverage": "do_energy_forecast_coverage",
+            "do_home_forecast_confidence": "do_energy_forecast_confidence",
+            "do_home_forecast_model_health": "do_energy_forecast_model_health",
+            "do_home_forecast_accuracy": "do_energy_forecast_accuracy",
+            "do_home_forecast_mae": "do_energy_forecast_mae",
+            "do_home_forecast_bias": "do_energy_forecast_bias",
+            "do_home_forecast_evaluation_samples": "do_energy_forecast_evaluation_samples",
+        }
+        for old, new in {**source_pairs, **energy_pairs}.items():
+            self.assertRegex(init_source, rf'\("sensor", "{old}", "{new}", "sensor\.{new}"\)')
+        self.assertIn("new_unique_id=new_unique_id", init_source)
+        self.assertIn("new_entity_id=target_entity_id", init_source)
 
     def test_bidirectional_grid_contract_is_fixed(self) -> None:
         sensor_source = (ROOT / "custom_components/dummy_os_data/home_input_sensor.py").read_text()
@@ -108,12 +187,21 @@ class ReleaseConsistencyTests(unittest.TestCase):
         self.assertNotIn("\n    CONF_GRID_IMPORT_POWER_ENTITY,", config_flow)
         self.assertNotIn("\n    CONF_GRID_EXPORT_POWER_ENTITY,", config_flow)
 
-    def test_home_forecast_uses_canonical_data_home_power(self) -> None:
-        const_source = (ROOT / "custom_components/dummy_os_data/const.py").read_text()
-        coordinator_source = (ROOT / "custom_components/dummy_os_data/coordinator.py").read_text()
-        self.assertIn('CANONICAL_HOME_POWER_ENTITY = "sensor.do_data_home_power"', const_source)
-        self.assertIn("return CANONICAL_HOME_POWER_ENTITY", coordinator_source)
-        self.assertNotIn("self.entry.options.get(\n            CONF_HOME_POWER_ENTITY", coordinator_source)
+    def test_temporary_home_input_aliases_are_explicitly_cleaned(self) -> None:
+        expected = {"do_input_home_power_raw", "do_home_power", "do_home_import_power", "do_home_export_power"}
+        self.assertEqual(expected, set(OBSOLETE_HOME_INPUT_ENTITY_ALIASES))
+        init_source = (ROOT / "custom_components/dummy_os_data/__init__.py").read_text()
+        self.assertIn("hass.states.async_remove(registered_entity_id)", init_source)
+        self.assertIn("hass.states.async_remove(alias_entity_id)", init_source)
+        self.assertIn("_is_obsolete_home_input_state", init_source)
+        self.assertGreaterEqual(init_source.count("_async_remove_obsolete_home_input_entities(hass)"), 2)
+
+    def test_all_observed_solar_entity_ids_have_exact_migration_aliases(self) -> None:
+        self.assertEqual(EXPECTED_SOLAR_ENTITY_ID_ALIASES, SOLAR_GENERATED_ENTITY_ID_ALIASES)
+        self.assertEqual(14, len(SOLAR_GENERATED_ENTITY_ID_ALIASES))
+        init_source = (ROOT / "custom_components/dummy_os_data/__init__.py").read_text()
+        for unique_id in EXPECTED_SOLAR_ENTITY_ID_ALIASES:
+            self.assertIn(f'("sensor", "{unique_id}", "sensor.{unique_id}")', init_source)
 
     def test_gas_tariff_uses_internal_options_only(self) -> None:
         prices_source = (ROOT / "custom_components/dummy_os_data/prices.py").read_text()
@@ -121,7 +209,6 @@ class ReleaseConsistencyTests(unittest.TestCase):
         self.assertNotIn("input_number.gas_markup_per_m3", prices_source)
         self.assertIn("return self._num(CONF_GAS_SUPPLIER) + self._num(CONF_GAS_TAX)", prices_source)
         self.assertIn('"gas_variable_addon_source": "dummy_os_data_options"', prices_source)
-        self.assertIn('"tariff_edit_surface": "Dummy OS Data Options"', prices_source)
 
     def test_solar_examples_reference_only_registered_entities(self) -> None:
         sensor_source = (ROOT / "custom_components/dummy_os_data/solar_sensor.py").read_text()
