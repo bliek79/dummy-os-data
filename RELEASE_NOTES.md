@@ -1,50 +1,97 @@
 # GitHub Release
 
-**Tag:** `0.1.0-alpha.11.11`
+**Tag:** `0.1.0-alpha.12`
 
-**Release title:** `Dummy OS Data 0.1.0-alpha.11.11 - Solar Horizon Export Sensors`
+**Release title:** `Dummy OS Forecast 0.1.0-alpha.12 - Naming and Registry Migration`
 
-## Dummy OS Data 0.1.0-alpha.11.11
+## Dummy OS Forecast 0.1.0-alpha.12
 
-Deze alpha maakt de in alpha.11.10 opgebouwde Solar-horizon-evaluaties direct en betrouwbaar beschikbaar aan Home Assistant-consumenten zoals de Google Sheets-validatieautomation.
+Deze pre-release zet de publieke naam- en entiteitenstructuur van de forecastintegratie recht zonder de bestaande forecastberekeningen of de vaste tijdarchitectuur te veranderen.
 
-### Nieuw
+### Integratienaam
 
-- Vijf afzonderlijke Solar horizon-evaluatiesensoren:
-  - `sensor.do_solar_evaluation_horizon_1h`
-  - `sensor.do_solar_evaluation_horizon_6h`
-  - `sensor.do_solar_evaluation_horizon_24h`
-  - `sensor.do_solar_evaluation_horizon_48h`
-  - `sensor.do_solar_evaluation_horizon_72h`
-- Iedere sensor publiceert het laatst voltooide evaluatierecord voor zijn vaste horizon.
-- De sensorstate gebruikt het unieke `snapshot_id`, zodat een nieuwe afgeronde evaluatie als echte state-change kan dienen voor Home Assistant-automations.
-- De volledige bestaande horizon-evaluatie wordt als vlakke attributes beschikbaar gemaakt, waaronder `slot_start`, `slot_end`, `horizon_hours`, `forecast_captured_at`, provider/model, forecast/actual/error/absolute error/bias/accuracy/valid/coverage voor noord, zuid en totaal.
+- De zichtbare Home Assistant-integratienaam wordt **Dummy OS Forecast**.
+- Het technische Home Assistant-domain blijft bewust `dummy_os_data` om een onnodige domainmigratie te vermijden.
+- Bestaande automatisch aangemaakte config-entrytitel `Dummy OS` of `Dummy OS Data` wordt tijdens setup naar `Dummy OS Forecast` bijgewerkt; een handmatig aangepaste titel wordt niet overschreven.
 
-### Gewijzigd
+### Source-laag
 
-- `solar_sensor.py` leest de reeds bestaande `last_horizon_evaluations` uit de Solar coordinator en exposeert die als vijf zelfstandige shadow-sensoren.
-- Er is geen tweede berekenpad toegevoegd; de sensoren gebruiken exact de horizon-evaluaties die alpha.11.10 al persistent opbouwt.
+De zeven bestaande `do_data_*`-bronsensoren worden gecontroleerd gemigreerd naar één vaste Source-namespace:
+
+- `sensor.do_source_grid_net_power`
+- `sensor.do_source_grid_import_power`
+- `sensor.do_source_grid_export_power`
+- `sensor.do_source_solar_power`
+- `sensor.do_source_battery_charge_power`
+- `sensor.do_source_battery_discharge_power`
+- `sensor.do_source_home_power`
+
+De onderliggende vermogenslogica blijft gelijk. Netvermogen blijft positief voor import en negatief voor export; `unknown` en `unavailable` worden niet als nul geïnterpreteerd.
+
+### Energy Forecast
+
+De veertien bestaande `do_home_*`-forecast-/historie-/evaluatiesensoren worden naar `do_energy_*` gemigreerd:
+
+- `sensor.do_energy_actual_quarter`
+- `sensor.do_energy_history_status`
+- `sensor.do_energy_history_days`
+- `sensor.do_energy_forecast_model`
+- `sensor.do_energy_forecast`
+- `sensor.do_energy_forecast_timeline`
+- `sensor.do_energy_forecast_next_quarter`
+- `sensor.do_energy_forecast_coverage`
+- `sensor.do_energy_forecast_confidence`
+- `sensor.do_energy_forecast_model_health`
+- `sensor.do_energy_forecast_accuracy`
+- `sensor.do_energy_forecast_mae`
+- `sensor.do_energy_forecast_bias`
+- `sensor.do_energy_forecast_evaluation_samples`
+
+Ook de profielselect wordt consequent:
+
+- `select.do_energy_profile`
+
+De bestaande opgeslagen Energy/Home-forecastdata blijft dezelfde store gebruiken; dit is een identitymigratie en geen modelreset.
+
+### Degree Days
+
+Degree Days wordt niet langer alleen via losse `hass.states.async_set()`-states gepubliceerd. De laag krijgt tien normale geregistreerde `SensorEntity`-entiteiten onder Dummy OS Forecast:
+
+- `sensor.do_degree_days_status`
+- `sensor.do_degree_days_history_days`
+- `sensor.do_degree_days_temperature_daily`
+- `sensor.do_degree_days_daily`
+- `sensor.do_degree_days_weighted_daily`
+- `sensor.do_degree_days_reference_daily`
+- `sensor.do_degree_days_weighted_reference_daily`
+- `sensor.do_degree_days_difference`
+- `sensor.do_degree_days_weighted_difference`
+- `sensor.do_degree_days_last_day`
+
+Bekende oude losse Degree Days-runtime-states worden tijdens setup gericht verwijderd voordat de geregistreerde entiteiten worden opgebouwd.
 
 ### Ongewijzigd
 
+- Solar blijft `do_solar_*`.
+- Weather blijft `do_weather_*`.
+- Prices blijft `do_prices_*` en wordt in deze release nog niet naar het entity registry omgebouwd.
 - Native architectuur blijft **15 minuten / 72 uur / 288 slots**.
-- De bestaande `sensor.do_solar_evaluation_last_completed_quarter` en de directe kwartierevaluatie blijven intact.
-- De horizon-snapshot- en evaluatielogica uit alpha.11.10 blijft ongewijzigd.
-- Solar forecastmodel `open_meteo_gti_physical_v0.1` blijft ongewijzigd.
-- Home Forecast, Weather, Prices, Degree Days en de canonieke Data Power-inputlaag worden niet inhoudelijk gewijzigd.
-- `unknown` en `unavailable` worden niet stilzwijgend als nul verwerkt.
-- De horizonlaag blijft observation/shadow en stuurt geen EMS- of batterijactie aan.
+- Solar horizon-snapshots en de vijf horizon-evaluatiesensoren uit alpha.11.11 blijven intact.
+- Forecastmodellen, tariefberekeningen en fysieke bronformules worden door deze naam-/registryrelease niet inhoudelijk gewijzigd.
+- Er wordt geen EMS- of batterijactie aangestuurd.
 
-### Validatie
+### Migratiecontrole na installatie
 
-Na installatie en volledige Home Assistant-herstart:
+Na installatie en een volledige Home Assistant-herstart moet expliciet worden gecontroleerd:
 
-1. Controleer dat Dummy OS Data versie `0.1.0-alpha.11.11` draait.
-2. Controleer dat de vijf nieuwe horizon-sensoren aanwezig zijn.
-3. Controleer dat een sensor vóór zijn eerste voltooide evaluatie `waiting_for_first_completed_horizon` als statusattribute toont.
-4. Controleer na minimaal 1 uur dat `sensor.do_solar_evaluation_horizon_1h` een `snapshot_id` als state krijgt en een volledig evaluatierecord in de attributes heeft.
-5. Controleer na minimaal 6 uur hetzelfde voor de 6h-sensor; 24h/48h/72h volgen zodra voldoende tijd is verstreken.
-6. Controleer dat de bestaande `sensor.do_solar_evaluation_last_completed_quarter` normaal blijft doorlopen.
-7. Richt daarna de aparte Google Sheets-tab `Solar Forecast Horizons` en exportautomation in en beoordeel de horizonresultaten read-only.
+1. De integratie wordt zichtbaar als **Dummy OS Forecast** en draait versie `0.1.0-alpha.12`.
+2. Er zijn **65 geregistreerde entiteiten**: 64 sensors en 1 select.
+3. Prefixverdeling: 7 Source-sensors, 14 Energy-sensors + 1 Energy-select, 19 Solar-sensors, 14 Weather-sensors en 10 Degree Days-sensors.
+4. De oude `do_data_*`- en `do_home_*`-registry-entiteiten zijn niet als dubbele of verweesde entiteiten achtergebleven.
+5. De oude Degree Days-varianten `do_weighted_degree_days_*` en `do_heat_degree_days_last_day` zijn niet als losse reststates achtergebleven.
+6. Entity ID, unique ID en zichtbare naam sluiten per Source-, Energy- en Degree Days-entiteit op de nieuwe vaste naamstructuur aan.
+7. `sensor.do_source_home_power` levert dezelfde canonieke vermogensbalans als vóór de migratie en Energy Forecast blijft nieuwe kwartieren verwerken.
+8. Solar- en Weather-entiteiten blijven aanwezig met hun bestaande IDs en functionele states.
+9. De vijf Solar-horizon-evaluatiesensoren blijven ongewijzigd doorlopen.
 
-Live functionele validatie in Home Assistant blijft vereist voordat deze uitbreiding als volledig bevestigd wordt beschouwd.
+Live functionele validatie in Home Assistant blijft vereist voordat de migratie als volledig bevestigd wordt beschouwd.
