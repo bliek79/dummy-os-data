@@ -1,0 +1,76 @@
+name: Publish Dummy OS Forecast alpha.12.1
+
+on:
+  push:
+    branches:
+      - release/alpha12-1-publisher
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      VERSION: 0.1.0-alpha.12.1
+      RELEASE_SHA: 1e90c4c1e897c674fb23040288b0f505e953694d
+      ZIP_NAME: Dummy_OS_Forecast_0.1.0-alpha.12.1_HA_install.zip
+      SHA_NAME: SHA256SUMS_0.1.0-alpha.12.1.txt
+      RELEASE_TITLE: Dummy OS Forecast 0.1.0-alpha.12.1 - Degree Days and Display Name Fix
+    steps:
+      - name: Checkout exact release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Validate exact release commit
+        run: |
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          python -m compileall -q custom_components/dummy_os_data
+          python -m unittest discover -s tests -p 'test_*.py' -v
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path('custom_components/dummy_os_data/manifest.json').read_text())
+          const = Path('custom_components/dummy_os_data/const.py').read_text()
+          notes = Path('RELEASE_NOTES.md').read_text()
+          assert manifest['name'] == 'Dummy OS Forecast'
+          assert manifest['domain'] == 'dummy_os_data'
+          assert manifest['version'] == '0.1.0-alpha.12.1'
+          assert 'VERSION = "0.1.0-alpha.12.1"' in const
+          assert '**Tag:** `0.1.0-alpha.12.1`' in notes
+          PY
+
+      - name: Build install archive and checksum
+        run: |
+          rm -f "$ZIP_NAME" "$SHA_NAME"
+          zip -r "$ZIP_NAME" custom_components/dummy_os_data -x '*/__pycache__/*' '*.pyc'
+          sha256sum "$ZIP_NAME" > "$SHA_NAME"
+          cat "$SHA_NAME"
+
+      - name: Refuse duplicate release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "Release $VERSION already exists"
+            exit 1
+          fi
+
+      - name: Publish pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$VERSION" \
+            --target "$RELEASE_SHA" \
+            --title "$RELEASE_TITLE" \
+            --notes-file RELEASE_NOTES.md \
+            --prerelease \
+            "$ZIP_NAME" \
+            "$SHA_NAME"
