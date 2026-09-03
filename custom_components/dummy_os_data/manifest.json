@@ -1,11 +1,11 @@
 {
   "domain": "dummy_os_data",
-  "name": "Dummy OS Data",
+  "name": "Dummy OS Forecast",
   "codeowners": [],
   "config_flow": true,
   "documentation": "https://github.com/bliek79/dummy-os-data",
   "integration_type": "service",
   "iot_class": "cloud_polling",
   "requirements": [],
-  "version": "0.1.0-alpha.11.11"
+  "version": "0.1.0-alpha.12"
 }
