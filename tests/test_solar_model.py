@@ -35,6 +35,13 @@ class SolarModelTests(unittest.TestCase):
             datetime(2026, 8, 29, 10, 0, tzinfo=timezone.utc),
         )
 
+    def test_floor_slot_start_removes_scheduler_latency(self) -> None:
+        stamp = datetime(2026, 9, 3, 15, 45, 0, 932780, tzinfo=timezone.utc)
+        self.assertEqual(
+            solar_model.floor_slot_start(stamp),
+            datetime(2026, 9, 3, 15, 45, tzinfo=timezone.utc),
+        )
+
     def test_next_complete_slot_after_boundary(self) -> None:
         stamp = datetime(2026, 8, 29, 10, 0, 20, tzinfo=timezone.utc)
         self.assertEqual(

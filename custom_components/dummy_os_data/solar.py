@@ -46,6 +46,7 @@ from .const import (
 from .solar_evaluation import ROOFS, build_quarter_evaluation
 from .solar_model import (
     backward_average_slot_start,
+    floor_slot_start,
     next_complete_slot,
     next_future_slot_index,
     pv_power_kw,
@@ -281,14 +282,15 @@ class DummyOSSolarCoordinator:
     async def _async_quarter_boundary(self, now: datetime) -> None:
         """Finalize actual energy, capture future horizons and freeze the new slot."""
         now_utc = dt_util.as_utc(now)
-        self._integrate_actual_until(now_utc)
-        self._finalize_quarter(now_utc)
-        self._capture_horizon_snapshots(now_utc)
-        # This callback is registered for the exact quarter boundary. Use that
-        # logical boundary as capture time so event-loop latency does not turn
-        # an on-time immutable snapshot into a false "late forecast" result.
-        self._start_quarter(now_utc, scheduled_boundary=True)
-        self._set_actual_sample(now_utc)
+        boundary_utc = floor_slot_start(now_utc, QUARTER_MINUTES)
+        self._integrate_actual_until(boundary_utc)
+        self._finalize_quarter(boundary_utc)
+        self._capture_horizon_snapshots(boundary_utc)
+        if self.last_evaluation is not None:
+            self.last_evaluation["pending_horizon_snapshot_count"] = len(self._horizon_snapshots)
+            self.last_evaluation["horizon_capture_boundary"] = boundary_utc.isoformat()
+        self._start_quarter(boundary_utc, scheduled_boundary=True)
+        self._set_actual_sample(boundary_utc)
         await self.store.async_save(self._storage_data())
         self._notify()
 

@@ -32,10 +32,11 @@ def test_snapshots_are_persistent_and_immutable() -> None:
 
 def test_quarter_boundary_captures_future_horizons() -> None:
     source = _source()
-    finalize = source.index("self._finalize_quarter(now_utc)")
-    capture = source.index("self._capture_horizon_snapshots(now_utc)")
-    start = source.index("self._start_quarter(now_utc, scheduled_boundary=True)")
-    assert finalize < capture < start
+    boundary = source.index("boundary_utc = floor_slot_start(now_utc, QUARTER_MINUTES)")
+    finalize = source.index("self._finalize_quarter(boundary_utc)")
+    capture = source.index("self._capture_horizon_snapshots(boundary_utc)")
+    start = source.index("self._start_quarter(boundary_utc, scheduled_boundary=True)")
+    assert boundary < finalize < capture < start
 
 
 def test_horizon_evaluation_is_export_ready() -> None:

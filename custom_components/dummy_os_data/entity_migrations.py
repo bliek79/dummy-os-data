@@ -17,6 +17,11 @@ SOLAR_GENERATED_ENTITY_ID_ALIASES: dict[str, str] = {
     "do_solar_actual_power_south": "sensor.dummy_os_solar_actual_power_south",
     "do_solar_actual_power_total": "sensor.dummy_os_solar_actual_power_total",
     "do_solar_evaluation_last_completed_quarter": "sensor.dummy_os_solar_evaluation_last_completed_quarter",
+    "do_solar_evaluation_horizon_1h": "sensor.dummy_os_solar_evaluation_horizon_1h",
+    "do_solar_evaluation_horizon_6h": "sensor.dummy_os_solar_evaluation_horizon_6h",
+    "do_solar_evaluation_horizon_24h": "sensor.dummy_os_solar_evaluation_horizon_24h",
+    "do_solar_evaluation_horizon_48h": "sensor.dummy_os_solar_evaluation_horizon_48h",
+    "do_solar_evaluation_horizon_72h": "sensor.dummy_os_solar_evaluation_horizon_72h",
     "do_solar_model": "sensor.dummy_os_solar_forecast_model",
 }
 
