@@ -2,8 +2,8 @@
   "config": {
     "step": {
       "user": {
-        "title": "Dummy OS Data",
-        "description": "Selecteer de onderliggende vermogensbronnen waarmee Dummy OS Data zelf het canonieke woningvermogen opbouwt. Netvermogen gebruikt één bidirectionele bron: positief = afname, negatief = teruglevering.",
+        "title": "Dummy OS Forecast",
+        "description": "Selecteer de onderliggende vermogensbronnen waarmee Dummy OS Forecast zelf het canonieke Source Home Power opbouwt. Netvermogen gebruikt één bidirectionele bron: positief = afname, negatief = teruglevering.",
         "data": {
           "grid_net_power_entity": "Bron netto netvermogen (positief afname, negatief teruglevering)",
           "data_solar_power_entity": "Bron solarvermogen",
@@ -17,14 +17,14 @@
       "unsupported_unit": "De geselecteerde bron moet W of kW gebruiken."
     },
     "abort": {
-      "already_configured": "Dummy OS Data is al geconfigureerd."
+      "already_configured": "Dummy OS Forecast is al geconfigureerd."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Dummy OS Data-opties",
-        "description": "Configureer vier onderliggende energiebronnen. Netvermogen is één bidirectionele sensor: positief = afname en negatief = teruglevering. Dummy OS Data splitst dit intern naar import/export en berekent daarna woningvermogen. Daarna volgen Prijzen en Solar.",
+        "title": "Dummy OS Forecast-opties",
+        "description": "Configureer vier onderliggende energiebronnen. Netvermogen is één bidirectionele sensor: positief = afname en negatief = teruglevering. Dummy OS Forecast splitst dit intern naar import/export en berekent daarna Source Home Power. Daarna volgen Prijzen en Solar.",
         "data": {
           "grid_net_power_entity": "Bron netto netvermogen (positief afname, negatief teruglevering)",
           "data_solar_power_entity": "Bron solarvermogen",
