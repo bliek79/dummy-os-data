@@ -1,4 +1,4 @@
-"""Degree days and heat-history shadow layer for Dummy OS Data."""
+"""Degree Days and heat-history feature layer for Dummy OS Forecast."""
 
 from __future__ import annotations
 
@@ -68,7 +68,6 @@ class DummyOSDegreeDaysCoordinator:
                 second=50,
             )
         )
-        self._publish_states()
         await self._async_save()
 
     async def async_shutdown(self) -> None:
@@ -97,7 +96,6 @@ class DummyOSDegreeDaysCoordinator:
     @callback
     def _weather_updated(self) -> None:
         self._record_weather_sample()
-        self._publish_states()
         self.hass.async_create_task(self._async_save())
         self._notify()
 
@@ -131,7 +129,6 @@ class DummyOSDegreeDaysCoordinator:
         self.records = [item for item in self.records if item.get("date") != date_string]
         self.records.append(record)
         self._prune()
-        self._publish_states()
         await self._async_save()
         self._notify()
 
@@ -244,43 +241,6 @@ class DummyOSDegreeDaysCoordinator:
         if not bool(self.last_record and self.last_record.get("valid")):
             return "partial_history"
         return "ok"
-
-    def _publish_states(self) -> None:
-        """Publish compact shadow sensors for dashboards, Recorder and Sheets export."""
-        record = self.last_record or {}
-
-        def set_sensor(entity_id: str, value: Any, friendly_name: str, unit: str | None = None, icon: str | None = None, extra: dict[str, Any] | None = None) -> None:
-            attrs: dict[str, Any] = {"friendly_name": friendly_name}
-            if unit is not None:
-                attrs["unit_of_measurement"] = unit
-            if icon is not None:
-                attrs["icon"] = icon
-            if extra:
-                attrs.update(extra)
-            state = "unknown" if value is None else value
-            self.hass.states.async_set(entity_id, state, attrs)
-
-        set_sensor("sensor.do_degree_days_status", self.status, "Dummy OS Degree Days Status", icon="mdi:database-check-outline")
-        set_sensor("sensor.do_degree_days_history_days", self.history_days, "Dummy OS Degree Days History Days", "d", "mdi:calendar-clock-outline")
-        set_sensor("sensor.do_degree_days_temperature_daily", record.get("average_temperature_c"), "Dummy OS Degree Days Daily Temperature", "°C", "mdi:thermometer-lines")
-        set_sensor("sensor.do_degree_days_daily", record.get("degree_days"), "Dummy OS Degree Days Daily", "dd", "mdi:weather-cloudy-clock")
-        set_sensor("sensor.do_weighted_degree_days_daily", record.get("weighted_degree_days"), "Dummy OS Weighted Degree Days Daily", "wdd", "mdi:chart-line")
-        set_sensor("sensor.do_degree_days_reference_daily", record.get("reference_degree_days"), "Dummy OS Degree Days Reference Daily", "dd", "mdi:compare")
-        set_sensor("sensor.do_weighted_degree_days_reference_daily", record.get("reference_weighted_degree_days"), "Dummy OS Weighted Degree Days Reference Daily", "wdd", "mdi:compare-horizontal")
-        set_sensor("sensor.do_degree_days_difference", record.get("degree_days_difference"), "Dummy OS Degree Days Difference", "dd", "mdi:delta")
-        set_sensor("sensor.do_weighted_degree_days_difference", record.get("weighted_degree_days_difference"), "Dummy OS Weighted Degree Days Difference", "wdd", "mdi:delta")
-        set_sensor(
-            "sensor.do_heat_degree_days_last_day",
-            record.get("date"),
-            "Dummy OS Heat Degree Days Last Day",
-            icon="mdi:home-thermometer-outline",
-            extra={
-                "data_type": "completed_day_snapshot",
-                "storage_limit_days": MAX_HISTORY_DAYS,
-                "minimum_valid_hours": MIN_VALID_HOURS,
-                **record,
-            },
-        )
 
     def _prune(self) -> None:
         cutoff_date = (dt_util.as_local(dt_util.utcnow()).date() - timedelta(days=MAX_HISTORY_DAYS)).isoformat()

@@ -1,4 +1,4 @@
-"""Canonical energy-flow input sensors for Dummy OS Data."""
+"""Canonical energy-flow source sensors for Dummy OS Forecast."""
 
 from __future__ import annotations
 
@@ -28,20 +28,20 @@ from .coordinator import DummyOSHomeDataCoordinator
 POSITIVE_SOURCE_DEFINITIONS: tuple[tuple[str, str, str, str], ...] = (
     (
         CONF_DATA_SOLAR_POWER_ENTITY,
-        "do_data_solar_power",
-        "DO Data Solar Power",
+        "do_source_solar_power",
+        "DO Source Solar Power",
         "mdi:solar-power",
     ),
     (
         CONF_BATTERY_CHARGE_POWER_ENTITY,
-        "do_data_battery_charge_power",
-        "DO Data Battery Charge Power",
+        "do_source_battery_charge_power",
+        "DO Source Battery Charge Power",
         "mdi:battery-arrow-up-outline",
     ),
     (
         CONF_BATTERY_DISCHARGE_POWER_ENTITY,
-        "do_data_battery_discharge_power",
-        "DO Data Battery Discharge Power",
+        "do_source_battery_discharge_power",
+        "DO Source Battery Discharge Power",
         "mdi:battery-arrow-down-outline",
     ),
 )
@@ -67,8 +67,8 @@ def source_power_w(state: State | None, *, allow_negative: bool) -> float | None
     return value
 
 
-class DummyOSDataPowerBaseSensor(SensorEntity):
-    """Base entity for canonical Dummy OS Data power-flow sensors."""
+class DummyOSSourcePowerBaseSensor(SensorEntity):
+    """Base entity for canonical Dummy OS Forecast source-flow sensors."""
 
     _attr_should_poll = False
     _attr_has_entity_name = False
@@ -86,7 +86,7 @@ class DummyOSDataPowerBaseSensor(SensorEntity):
             identifiers={(DOMAIN, "main")},
             name=NAME,
             manufacturer="Dummy OS",
-            model="Data Forecast Platform",
+            model="Forecast Platform",
             sw_version=VERSION,
         )
 
@@ -126,12 +126,12 @@ class DummyOSDataPowerBaseSensor(SensorEntity):
         raise NotImplementedError
 
 
-class DummyOSDataGridNetPowerSensor(DummyOSDataPowerBaseSensor):
+class DummyOSSourceGridNetPowerSensor(DummyOSSourcePowerBaseSensor):
     """Canonical signed grid power: positive import, negative export."""
 
-    _attr_name = "DO Data Grid Net Power"
-    _attr_unique_id = "do_data_grid_net_power"
-    _attr_suggested_object_id = "do_data_grid_net_power"
+    _attr_name = "DO Source Grid Net Power"
+    _attr_unique_id = "do_source_grid_net_power"
+    _attr_suggested_object_id = "do_source_grid_net_power"
     _attr_icon = "mdi:transmission-tower"
 
     def _source_entities(self) -> list[tuple[str, str | None]]:
@@ -160,21 +160,21 @@ class DummyOSDataGridNetPowerSensor(DummyOSDataPowerBaseSensor):
         }
 
 
-class DummyOSDataGridSplitPowerSensor(DummyOSDataPowerBaseSensor):
+class DummyOSSourceGridSplitPowerSensor(DummyOSSourcePowerBaseSensor):
     """Positive import or export magnitude derived from the signed grid source."""
 
     def __init__(self, coordinator: DummyOSHomeDataCoordinator, *, export: bool) -> None:
         super().__init__(coordinator)
         self.export = export
         if export:
-            self._attr_name = "DO Data Grid Export Power"
-            self._attr_unique_id = "do_data_grid_export_power"
-            self._attr_suggested_object_id = "do_data_grid_export_power"
+            self._attr_name = "DO Source Grid Export Power"
+            self._attr_unique_id = "do_source_grid_export_power"
+            self._attr_suggested_object_id = "do_source_grid_export_power"
             self._attr_icon = "mdi:transmission-tower-export"
         else:
-            self._attr_name = "DO Data Grid Import Power"
-            self._attr_unique_id = "do_data_grid_import_power"
-            self._attr_suggested_object_id = "do_data_grid_import_power"
+            self._attr_name = "DO Source Grid Import Power"
+            self._attr_unique_id = "do_source_grid_import_power"
+            self._attr_suggested_object_id = "do_source_grid_import_power"
             self._attr_icon = "mdi:transmission-tower-import"
 
     def _source_entities(self) -> list[tuple[str, str | None]]:
@@ -200,12 +200,12 @@ class DummyOSDataGridSplitPowerSensor(DummyOSDataPowerBaseSensor):
         return {
             "source_entity": self._configured_entity(CONF_GRID_NET_POWER_ENTITY),
             "source_available": self.available,
-            "derived_from": "sensor.do_data_grid_net_power",
+            "derived_from": "sensor.do_source_grid_net_power",
             "formula": "max(-grid_net, 0)" if self.export else "max(grid_net, 0)",
         }
 
 
-class DummyOSDataSourcePowerSensor(DummyOSDataPowerBaseSensor):
+class DummyOSSourcePowerSensor(DummyOSSourcePowerBaseSensor):
     """One normalized positive source-flow magnitude."""
 
     def __init__(
@@ -249,12 +249,12 @@ class DummyOSDataSourcePowerSensor(DummyOSDataPowerBaseSensor):
         }
 
 
-class DummyOSDataHomePowerSensor(DummyOSDataPowerBaseSensor):
-    """Canonical Home Power derived from the complete local power balance."""
+class DummyOSSourceHomePowerSensor(DummyOSSourcePowerBaseSensor):
+    """Canonical home power derived from the complete local power balance."""
 
-    _attr_name = "DO Data Home Power"
-    _attr_unique_id = "do_data_home_power"
-    _attr_suggested_object_id = "do_data_home_power"
+    _attr_name = "DO Source Home Power"
+    _attr_unique_id = "do_source_home_power"
+    _attr_suggested_object_id = "do_source_home_power"
     _attr_icon = "mdi:home-lightning-bolt-outline"
 
     def _source_entities(self) -> list[tuple[str, str | None]]:
@@ -307,7 +307,7 @@ class DummyOSDataHomePowerSensor(DummyOSDataPowerBaseSensor):
             },
             "source_values_w": values,
             "missing_sources": missing,
-            "canonical_layer": "dummy_os_data",
+            "canonical_layer": "dummy_os_forecast_source",
             "reference_entity": "sensor.home_power",
             "reference_only": True,
         }
@@ -316,14 +316,14 @@ class DummyOSDataHomePowerSensor(DummyOSDataPowerBaseSensor):
 def build_home_input_sensors(
     coordinator: DummyOSHomeDataCoordinator,
 ) -> list[SensorEntity]:
-    """Build the definitive canonical Data energy-flow sensor set."""
+    """Build the definitive canonical Source energy-flow sensor set."""
     entities: list[SensorEntity] = [
-        DummyOSDataGridNetPowerSensor(coordinator),
-        DummyOSDataGridSplitPowerSensor(coordinator, export=False),
-        DummyOSDataGridSplitPowerSensor(coordinator, export=True),
+        DummyOSSourceGridNetPowerSensor(coordinator),
+        DummyOSSourceGridSplitPowerSensor(coordinator, export=False),
+        DummyOSSourceGridSplitPowerSensor(coordinator, export=True),
     ]
     entities.extend(
-        DummyOSDataSourcePowerSensor(
+        DummyOSSourcePowerSensor(
             coordinator,
             config_key,
             object_id,
@@ -332,5 +332,5 @@ def build_home_input_sensors(
         )
         for config_key, object_id, name, icon in POSITIVE_SOURCE_DEFINITIONS
     )
-    entities.append(DummyOSDataHomePowerSensor(coordinator))
+    entities.append(DummyOSSourceHomePowerSensor(coordinator))
     return entities

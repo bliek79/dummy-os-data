@@ -49,7 +49,7 @@ class DummyOSSolarBaseSensor(SensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        return DeviceInfo(identifiers={(DOMAIN, "main")}, name=NAME, manufacturer="Dummy OS", model="Data Forecast Platform", sw_version=VERSION)
+        return DeviceInfo(identifiers={(DOMAIN, "main")}, name=NAME, manufacturer="Dummy OS", model="Forecast Platform", sw_version=VERSION)
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()

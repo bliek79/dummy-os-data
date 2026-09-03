@@ -1,4 +1,4 @@
-"""Select entities for Dummy OS Data."""
+"""Select entities for Dummy OS Forecast."""
 
 from __future__ import annotations
 
@@ -18,15 +18,15 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     coordinator: DummyOSHomeDataCoordinator = entry.runtime_data
-    async_add_entities([DummyOSHomeProfileSelect(coordinator)])
+    async_add_entities([DummyOSEnergyProfileSelect(coordinator)])
 
 
-class DummyOSHomeProfileSelect(SelectEntity):
-    """Select the active Home Forecast historical profile."""
+class DummyOSEnergyProfileSelect(SelectEntity):
+    """Select the active Energy Forecast historical profile."""
 
-    _attr_name = "Dummy OS Home Profile"
-    _attr_unique_id = "do_home_profile"
-    _attr_suggested_object_id = "do_home_profile"
+    _attr_name = "DO Energy Profile"
+    _attr_unique_id = "do_energy_profile"
+    _attr_suggested_object_id = "do_energy_profile"
     _attr_options = PROFILE_OPTIONS
     _attr_icon = "mdi:home-account"
     _attr_should_poll = False
@@ -45,7 +45,7 @@ class DummyOSHomeProfileSelect(SelectEntity):
             identifiers={(DOMAIN, "main")},
             name=NAME,
             manufacturer="Dummy OS",
-            model="Data Forecast Platform",
+            model="Forecast Platform",
             sw_version=VERSION,
         )
 
