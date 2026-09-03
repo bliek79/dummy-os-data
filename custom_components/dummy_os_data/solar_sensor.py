@@ -66,7 +66,7 @@ class DummyOSSolarBaseSensor(SensorEntity):
 
 
 class DummyOSSolarStatusSensor(DummyOSSolarBaseSensor):
-    _attr_name = "Dummy OS Solar Source Status"
+    _attr_name = "DO Solar Source Status"
     _attr_unique_id = "do_solar_status"
     _attr_suggested_object_id = "do_solar_status"
     _attr_icon = "mdi:solar-power-variant-outline"
@@ -108,7 +108,7 @@ class DummyOSSolarStatusSensor(DummyOSSolarBaseSensor):
 
 
 class DummyOSSolarTimelineSensor(DummyOSSolarBaseSensor):
-    _attr_name = "Dummy OS Solar Forecast Timeline"
+    _attr_name = "DO Solar Forecast Timeline"
     _attr_unique_id = "do_solar_forecast_timeline"
     _attr_suggested_object_id = "do_solar_forecast_timeline"
     _attr_icon = "mdi:chart-timeline-variant-shimmer"
@@ -154,7 +154,7 @@ class DummyOSSolarDailySensor(DummyOSSolarBaseSensor):
         self.day = day
         self.roof = roof
         object_id = f"do_solar_forecast_{day}_{roof}"
-        self._attr_name = f"Dummy OS Solar Forecast {day.title()} {roof.title()}"
+        self._attr_name = f"DO Solar Forecast {day.title()} {roof.title()}"
         self._attr_unique_id = object_id
         self._attr_suggested_object_id = object_id
 
@@ -179,7 +179,7 @@ class DummyOSSolarDailySensor(DummyOSSolarBaseSensor):
 
 
 class DummyOSSolarNextQuarterSensor(DummyOSSolarBaseSensor):
-    _attr_name = "Dummy OS Solar Forecast Next Quarter"
+    _attr_name = "DO Solar Forecast Next Quarter"
     _attr_unique_id = "do_solar_forecast_next_quarter"
     _attr_suggested_object_id = "do_solar_forecast_next_quarter"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
@@ -213,7 +213,7 @@ class DummyOSSolarActualPowerSensor(DummyOSSolarBaseSensor):
         super().__init__(coordinator)
         self.roof = roof
         object_id = f"do_solar_actual_power_{roof}"
-        self._attr_name = f"Dummy OS Solar Actual Power {roof.title()}"
+        self._attr_name = f"DO Solar Actual Power {roof.title()}"
         self._attr_unique_id = object_id
         self._attr_suggested_object_id = object_id
 
@@ -229,7 +229,7 @@ class DummyOSSolarActualPowerSensor(DummyOSSolarBaseSensor):
 class DummyOSSolarLastCompletedQuarterSensor(DummyOSSolarBaseSensor):
     """Expose one immutable, flat record for automation and Sheets export."""
 
-    _attr_name = "Dummy OS Solar Evaluation Last Completed Quarter"
+    _attr_name = "DO Solar Evaluation Last Completed Quarter"
     _attr_unique_id = "do_solar_evaluation_last_completed_quarter"
     _attr_suggested_object_id = "do_solar_evaluation_last_completed_quarter"
     _attr_icon = "mdi:chart-box-outline"
@@ -260,7 +260,7 @@ class DummyOSSolarHorizonEvaluationSensor(DummyOSSolarBaseSensor):
         super().__init__(coordinator)
         self.horizon_hours = horizon_hours
         object_id = f"do_solar_evaluation_horizon_{horizon_hours}h"
-        self._attr_name = f"Dummy OS Solar Evaluation Horizon {horizon_hours}h"
+        self._attr_name = f"DO Solar Evaluation Horizon {horizon_hours}h"
         self._attr_unique_id = object_id
         self._attr_suggested_object_id = object_id
 
@@ -289,7 +289,7 @@ class DummyOSSolarHorizonEvaluationSensor(DummyOSSolarBaseSensor):
 
 
 class DummyOSSolarModelSensor(DummyOSSolarBaseSensor):
-    _attr_name = "Dummy OS Solar Forecast Model"
+    _attr_name = "DO Solar Forecast Model"
     _attr_unique_id = "do_solar_model"
     _attr_suggested_object_id = "do_solar_model"
     _attr_icon = "mdi:information-outline"
