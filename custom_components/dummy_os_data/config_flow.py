@@ -1,4 +1,4 @@
-"""Config flow for Dummy OS Data."""
+"""Config flow for Dummy OS Forecast."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
 from .const import (
+    CANONICAL_HOME_POWER_ENTITY,
     CONF_BATTERY_CHARGE_POWER_ENTITY,
     CONF_BATTERY_DISCHARGE_POWER_ENTITY,
     CONF_DATA_SOLAR_POWER_ENTITY,
@@ -59,8 +60,6 @@ from .const import (
     NAME,
 )
 
-CANONICAL_HOME_POWER_ENTITY = "sensor.do_data_home_power"
-
 
 def _power_selector() -> selector.EntitySelector:
     """Return the selector used for underlying power sources."""
@@ -91,7 +90,7 @@ def _required_source_field(key: str, current: str | None = None) -> tuple[Any, A
 
 
 class DummyOSDataConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle Dummy OS Data config flow."""
+    """Handle Dummy OS Forecast config flow."""
 
     VERSION = 1
 
@@ -131,7 +130,7 @@ class DummyOSDataConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class DummyOSDataOptionsFlow(config_entries.OptionsFlow):
-    """Handle Dummy OS Data options."""
+    """Handle Dummy OS Forecast options."""
 
     def _current(self, key: str, default: Any) -> Any:
         return self.config_entry.options.get(key, self.config_entry.data.get(key, default))
@@ -148,7 +147,7 @@ class DummyOSDataOptionsFlow(config_entries.OptionsFlow):
         return None
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        """Manage energy-flow, tariff and Solar options."""
+        """Manage source, tariff and Solar options."""
         errors: dict[str, str] = {}
         if user_input is not None:
             errors = _validate_power_sources(self.hass, user_input)
