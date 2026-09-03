@@ -51,10 +51,9 @@ _IDENTITY_MIGRATIONS: tuple[tuple[str, str, str, str], ...] = (
     ("select", "do_home_profile", "do_energy_profile", "select.do_energy_profile"),
 )
 
-# Direct runtime states from the old Degree Days publisher. Alpha.12.1 removes
-# them both before and after platform setup, because restored/stale states can
-# otherwise reserve the desired canonical entity IDs while SensorEntity rows are
-# being registered.
+# Direct runtime states from the old Degree Days publisher and stale states left
+# behind by the alpha.12 generated entity IDs. They are removed only when they
+# are not registered entities, both before and after platform setup.
 _DEGREE_DAYS_RUNTIME_STATE_ALIASES: tuple[str, ...] = (
     "sensor.do_degree_days_status",
     "sensor.do_degree_days_history_days",
@@ -66,6 +65,16 @@ _DEGREE_DAYS_RUNTIME_STATE_ALIASES: tuple[str, ...] = (
     "sensor.do_degree_days_difference",
     "sensor.do_weighted_degree_days_difference",
     "sensor.do_heat_degree_days_last_day",
+    "sensor.dummy_os_forecast_do_degree_days_status",
+    "sensor.dummy_os_forecast_do_degree_days_history_days",
+    "sensor.dummy_os_forecast_do_degree_days_temperature_daily",
+    "sensor.dummy_os_forecast_do_degree_days_daily",
+    "sensor.dummy_os_forecast_do_degree_days_weighted_daily",
+    "sensor.dummy_os_forecast_do_degree_days_reference_daily",
+    "sensor.dummy_os_forecast_do_degree_days_weighted_reference_daily",
+    "sensor.dummy_os_forecast_do_degree_days_difference",
+    "sensor.dummy_os_forecast_do_degree_days_weighted_difference",
+    "sensor.dummy_os_forecast_do_degree_days_last_day",
 )
 
 # Stable namespaces keep deterministic canonical entity IDs for automatically
@@ -192,7 +201,7 @@ def _async_remove_obsolete_home_input_entities(hass: HomeAssistant) -> None:
 
 
 def _async_remove_degree_days_runtime_states(hass: HomeAssistant) -> None:
-    """Remove only unregistered Degree Days states left by the old publisher."""
+    """Remove only unregistered Degree Days states left by old publishers or migrations."""
     registry = er.async_get(hass)
     for entity_id in _DEGREE_DAYS_RUNTIME_STATE_ALIASES:
         if registry.async_get(entity_id) is not None:
