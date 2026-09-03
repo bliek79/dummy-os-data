@@ -1,0 +1,63 @@
+name: Generate alpha.12.5 code branch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/generate-alpha12-5-code.yml
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply tested alpha.12.5 patch
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path('.github/workflows/publish-alpha12-5.yml')
+          lines = path.read_text(encoding='utf-8').splitlines()
+          start = lines.index('      - name: Apply targeted Solar horizon hotfix')
+          run_line = next(i for i in range(start, len(lines)) if lines[i] == '        run: |')
+          end = next(i for i in range(run_line + 1, len(lines)) if lines[i].startswith('      - name:'))
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines[run_line + 1:end]) + '\n'
+          exec(compile(script, str(path), 'exec'), {})
+
+          p = Path('tests/test_release_consistency.py')
+          t = p.read_text(encoding='utf-8')
+          t = t.replace('VERSION = "0.1.0-alpha.12.4"', 'VERSION = "0.1.0-alpha.12.5"', 1)
+          t = t.replace('    "do_solar_evaluation_last_completed_quarter": "sensor.dummy_os_solar_evaluation_last_completed_quarter",\n    "do_solar_model": "sensor.dummy_os_solar_forecast_model",\n', '    "do_solar_evaluation_last_completed_quarter": "sensor.dummy_os_solar_evaluation_last_completed_quarter",\n    "do_solar_evaluation_horizon_1h": "sensor.dummy_os_solar_evaluation_horizon_1h",\n    "do_solar_evaluation_horizon_6h": "sensor.dummy_os_solar_evaluation_horizon_6h",\n    "do_solar_evaluation_horizon_24h": "sensor.dummy_os_solar_evaluation_horizon_24h",\n    "do_solar_evaluation_horizon_48h": "sensor.dummy_os_solar_evaluation_horizon_48h",\n    "do_solar_evaluation_horizon_72h": "sensor.dummy_os_solar_evaluation_horizon_72h",\n    "do_solar_model": "sensor.dummy_os_solar_forecast_model",\n', 1)
+          t = t.replace('self.assertEqual(14, len(SOLAR_GENERATED_ENTITY_ID_ALIASES))', 'self.assertEqual(19, len(SOLAR_GENERATED_ENTITY_ID_ALIASES))', 1)
+          p.write_text(t, encoding='utf-8')
+
+          p = Path('tests/test_solar_horizon_snapshots.py')
+          t = p.read_text(encoding='utf-8')
+          t = t.replace('finalize = source.index("self._finalize_quarter(now_utc)")\n    capture = source.index("self._capture_horizon_snapshots(now_utc)")\n    start = source.index("self._start_quarter(now_utc, scheduled_boundary=True)")', 'boundary = source.index("boundary_utc = floor_slot_start(now_utc, QUARTER_MINUTES)")\n    finalize = source.index("self._finalize_quarter(boundary_utc)")\n    capture = source.index("self._capture_horizon_snapshots(boundary_utc)")\n    start = source.index("self._start_quarter(boundary_utc, scheduled_boundary=True)")', 1)
+          t = t.replace('assert finalize < capture < start', 'assert boundary < finalize < capture < start', 1)
+          p.write_text(t, encoding='utf-8')
+
+      - name: Validate
+        run: |
+          python -m compileall custom_components/dummy_os_data
+          find custom_components tests -type d -name __pycache__ -prune -exec rm -rf {} +
+          find custom_components tests -type f -name '*.pyc' -delete
+          python -m pip install pytest
+          python -m pytest -q
+
+      - name: Push clean code branch
+        run: |
+          find custom_components tests -type d -name __pycache__ -prune -exec rm -rf {} +
+          find custom_components tests -type f -name '*.pyc' -delete
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B alpha12-5-code-generated
+          git add custom_components tests RELEASE_NOTES.md
+          git commit -m "Fix Solar horizon runtime and canonical IDs for alpha.12.5"
+          git push --force-with-lease origin alpha12-5-code-generated
