@@ -1,4 +1,4 @@
-"""Release metadata and alpha.12.1 naming/registry consistency checks."""
+"""Release metadata and alpha.12.2 naming/registry consistency checks."""
 
 from __future__ import annotations
 
@@ -15,9 +15,10 @@ assert MIGRATION_SPEC is not None and MIGRATION_SPEC.loader is not None
 MIGRATION_MODULE = importlib.util.module_from_spec(MIGRATION_SPEC)
 MIGRATION_SPEC.loader.exec_module(MIGRATION_MODULE)
 SOLAR_GENERATED_ENTITY_ID_ALIASES = MIGRATION_MODULE.SOLAR_GENERATED_ENTITY_ID_ALIASES
+DEGREE_DAYS_GENERATED_ENTITY_ID_ALIASES = MIGRATION_MODULE.DEGREE_DAYS_GENERATED_ENTITY_ID_ALIASES
 OBSOLETE_HOME_INPUT_ENTITY_ALIASES = MIGRATION_MODULE.OBSOLETE_HOME_INPUT_ENTITY_ALIASES
 
-VERSION = "0.1.0-alpha.12.1"
+VERSION = "0.1.0-alpha.12.2"
 
 EXPECTED_SOLAR_ENTITY_ID_ALIASES = {
     "do_solar_status": "sensor.dummy_os_solar_source_status",
@@ -75,6 +76,10 @@ EXPECTED_DEGREE_DAYS_IDS = (
     "do_degree_days_weighted_difference",
     "do_degree_days_last_day",
 )
+
+EXPECTED_DEGREE_DAYS_ENTITY_ID_ALIASES = {
+    unique_id: f"sensor.dummy_os_forecast_{unique_id}" for unique_id in EXPECTED_DEGREE_DAYS_IDS
+}
 
 
 class ReleaseConsistencyTests(unittest.TestCase):
@@ -143,6 +148,13 @@ class ReleaseConsistencyTests(unittest.TestCase):
         self.assertIn('"sensor.do_heat_degree_days_last_day"', init_source)
         self.assertGreaterEqual(init_source.count("_async_remove_degree_days_runtime_states(hass)"), 2)
         self.assertIn("hass.states.async_remove(current_entity_id)", init_source)
+
+    def test_alpha12_degree_days_generated_aliases_are_explicitly_safe(self) -> None:
+        self.assertEqual(EXPECTED_DEGREE_DAYS_ENTITY_ID_ALIASES, DEGREE_DAYS_GENERATED_ENTITY_ID_ALIASES)
+        self.assertEqual(10, len(DEGREE_DAYS_GENERATED_ENTITY_ID_ALIASES))
+        for unique_id, entity_id in EXPECTED_DEGREE_DAYS_ENTITY_ID_ALIASES.items():
+            self.assertTrue(MIGRATION_MODULE.is_known_generated_entity_id("sensor", unique_id, entity_id))
+            self.assertFalse(MIGRATION_MODULE.is_known_generated_entity_id("sensor", unique_id, f"sensor.user_named_{unique_id}"))
 
     def test_solar_and_weather_display_names_do_not_repeat_dummy_os(self) -> None:
         sensor_source = (ROOT / "custom_components/dummy_os_data/sensor.py").read_text()
