@@ -1,3 +1,3 @@
-# Dummy OS Data
+# Dummy OS Forecast
 
-Forecast- en historische datalaag voor Dummy OS. Alpha 0.1.0-alpha.1 bouwt de 15-minuten historische basis voor de toekomstige Woning Forecast.
+Forecast-, bron-, historie- en validatielaag voor Dummy OS. De integratie werkt native op 15 minuten met een rollende horizon van 72 uur / 288 slots en bevat Energy, Weather, Solar, Prices en Degree Days.
