@@ -1,16 +1,16 @@
-"""Constants for Dummy OS Data."""
+"""Constants for Dummy OS Forecast."""
 
 from __future__ import annotations
 
 DOMAIN = "dummy_os_data"
-NAME = "Dummy OS"
-VERSION = "0.1.0-alpha.11.11"
+NAME = "Dummy OS Forecast"
+VERSION = "0.1.0-alpha.12"
 
-# Legacy Home Forecast source key retained for config-entry compatibility only.
-# Home Forecast production now always consumes the canonical Data Home Power entity.
+# Legacy Energy Forecast source key retained for config-entry compatibility only.
+# Energy Forecast production always consumes the canonical Source Home Power entity.
 CONF_HOME_POWER_ENTITY = "home_power_entity"
 DEFAULT_HOME_POWER_ENTITY = "sensor.home_power"
-CANONICAL_HOME_POWER_ENTITY = "sensor.do_data_home_power"
+CANONICAL_HOME_POWER_ENTITY = "sensor.do_source_home_power"
 CONF_HOME_POWER_POSITIVE_DIRECTION = "home_power_positive_direction"
 HOME_POWER_POSITIVE_CONSUMPTION = "consumption"
 HOME_POWER_POSITIVE_EXPORT = "export"
@@ -19,7 +19,7 @@ HOME_POWER_POSITIVE_DIRECTION_OPTIONS = [
     HOME_POWER_POSITIVE_EXPORT,
 ]
 
-# Canonical Dummy OS Data energy-flow inputs.
+# Canonical Dummy OS Forecast source-layer energy inputs.
 # Grid power is one bidirectional source: positive = import, negative = export.
 CONF_GRID_NET_POWER_ENTITY = "grid_net_power_entity"
 CONF_DATA_SOLAR_POWER_ENTITY = "data_solar_power_entity"
