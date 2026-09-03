@@ -414,7 +414,7 @@ class DummyOSWeatherCurrentSensor(DummyOSWeatherBaseSensor):
         super().__init__(coordinator)
         self.key = key
         object_id = f"do_weather_{key.removesuffix('_2m').removesuffix('_10m')}"
-        self._attr_name = f"Dummy OS Weather {label}"
+        self._attr_name = f"DO Weather {label}"
         self._attr_unique_id = object_id
         self._attr_suggested_object_id = object_id
         self._attr_native_unit_of_measurement = unit
@@ -432,7 +432,7 @@ class DummyOSWeatherCurrentSensor(DummyOSWeatherBaseSensor):
 
 
 class DummyOSWeatherTimelineSensor(DummyOSWeatherBaseSensor):
-    _attr_name = "Dummy OS Weather Forecast Timeline"
+    _attr_name = "DO Weather Forecast Timeline"
     _attr_unique_id = "do_weather_forecast_timeline"
     _attr_suggested_object_id = "do_weather_forecast_timeline"
     _attr_icon = "mdi:weather-partly-cloudy"
@@ -469,7 +469,7 @@ class DummyOSWeatherTimelineSensor(DummyOSWeatherBaseSensor):
 
 
 class DummyOSWeatherSourceStatusSensor(DummyOSWeatherBaseSensor):
-    _attr_name = "Dummy OS Weather Source Status"
+    _attr_name = "DO Weather Source Status"
     _attr_unique_id = "do_weather_source_status"
     _attr_suggested_object_id = "do_weather_source_status"
     _attr_icon = "mdi:cloud-check-outline"
@@ -484,7 +484,7 @@ class DummyOSWeatherSourceStatusSensor(DummyOSWeatherBaseSensor):
 
 
 class DummyOSWeatherFreshnessSensor(DummyOSWeatherBaseSensor):
-    _attr_name = "Dummy OS Weather Source Freshness"
+    _attr_name = "DO Weather Source Freshness"
     _attr_unique_id = "do_weather_source_freshness"
     _attr_suggested_object_id = "do_weather_source_freshness"
     _attr_icon = "mdi:clock-check-outline"
@@ -499,7 +499,7 @@ class DummyOSWeatherFreshnessSensor(DummyOSWeatherBaseSensor):
 
 
 class DummyOSWeatherLastUpdateSensor(DummyOSWeatherBaseSensor):
-    _attr_name = "Dummy OS Weather Last Update"
+    _attr_name = "DO Weather Last Update"
     _attr_unique_id = "do_weather_last_update"
     _attr_suggested_object_id = "do_weather_last_update"
     _attr_device_class = SensorDeviceClass.TIMESTAMP
@@ -511,7 +511,7 @@ class DummyOSWeatherLastUpdateSensor(DummyOSWeatherBaseSensor):
 
 
 class DummyOSWeatherModelSensor(DummyOSWeatherBaseSensor):
-    _attr_name = "Dummy OS Weather Model"
+    _attr_name = "DO Weather Model"
     _attr_unique_id = "do_weather_model"
     _attr_suggested_object_id = "do_weather_model"
     _attr_icon = "mdi:cloud-sync-outline"
