@@ -1,0 +1,33 @@
+name: Copy shared Dummy OS brand icon
+
+on:
+  push:
+    branches:
+      - feature/alpha12-4-shared-brand-icon
+
+permissions:
+  contents: write
+
+jobs:
+  copy-icon:
+    if: github.event.head_commit.message != 'Add shared EMS brand icon'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/alpha12-4-shared-brand-icon
+          fetch-depth: 0
+      - name: Copy exact EMS icon
+        run: |
+          mkdir -p custom_components/dummy_os_data/brand
+          curl -fL "https://raw.githubusercontent.com/bliek79/dummy-os-anker-ems/main/custom_components/anker_ems/brand/icon.png" -o custom_components/dummy_os_data/brand/icon.png
+          test -s custom_components/dummy_os_data/brand/icon.png
+          sha256sum custom_components/dummy_os_data/brand/icon.png
+      - name: Commit shared icon
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/dummy_os_data/brand/icon.png
+          git commit -m "Add shared EMS brand icon"
+          git push origin HEAD:feature/alpha12-4-shared-brand-icon
