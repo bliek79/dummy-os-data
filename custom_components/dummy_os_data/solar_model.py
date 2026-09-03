@@ -49,10 +49,15 @@ def backward_average_slot_start(timestamp: datetime, resolution_minutes: int = 1
     return timestamp - timedelta(minutes=resolution_minutes)
 
 
+def floor_slot_start(timestamp: datetime, resolution_minutes: int = 15) -> datetime:
+    """Return the exact start boundary of the slot containing timestamp."""
+    floor_minute = (timestamp.minute // resolution_minutes) * resolution_minutes
+    return timestamp.replace(minute=floor_minute, second=0, microsecond=0)
+
+
 def next_complete_slot(timestamp: datetime, resolution_minutes: int = 15) -> datetime:
     """Return the current boundary only when exactly on it, otherwise the next."""
-    floor_minute = (timestamp.minute // resolution_minutes) * resolution_minutes
-    floor = timestamp.replace(minute=floor_minute, second=0, microsecond=0)
+    floor = floor_slot_start(timestamp, resolution_minutes)
     return floor if timestamp == floor else floor + timedelta(minutes=resolution_minutes)
 
 

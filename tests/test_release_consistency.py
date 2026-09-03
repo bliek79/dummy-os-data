@@ -18,7 +18,7 @@ SOLAR_GENERATED_ENTITY_ID_ALIASES = MIGRATION_MODULE.SOLAR_GENERATED_ENTITY_ID_A
 DEGREE_DAYS_GENERATED_ENTITY_ID_ALIASES = MIGRATION_MODULE.DEGREE_DAYS_GENERATED_ENTITY_ID_ALIASES
 OBSOLETE_HOME_INPUT_ENTITY_ALIASES = MIGRATION_MODULE.OBSOLETE_HOME_INPUT_ENTITY_ALIASES
 
-VERSION = "0.1.0-alpha.12.4"
+VERSION = "0.1.0-alpha.12.5"
 
 EXPECTED_SOLAR_ENTITY_ID_ALIASES = {
     "do_solar_status": "sensor.dummy_os_solar_source_status",
@@ -34,6 +34,11 @@ EXPECTED_SOLAR_ENTITY_ID_ALIASES = {
     "do_solar_actual_power_south": "sensor.dummy_os_solar_actual_power_south",
     "do_solar_actual_power_total": "sensor.dummy_os_solar_actual_power_total",
     "do_solar_evaluation_last_completed_quarter": "sensor.dummy_os_solar_evaluation_last_completed_quarter",
+    "do_solar_evaluation_horizon_1h": "sensor.dummy_os_solar_evaluation_horizon_1h",
+    "do_solar_evaluation_horizon_6h": "sensor.dummy_os_solar_evaluation_horizon_6h",
+    "do_solar_evaluation_horizon_24h": "sensor.dummy_os_solar_evaluation_horizon_24h",
+    "do_solar_evaluation_horizon_48h": "sensor.dummy_os_solar_evaluation_horizon_48h",
+    "do_solar_evaluation_horizon_72h": "sensor.dummy_os_solar_evaluation_horizon_72h",
     "do_solar_model": "sensor.dummy_os_solar_forecast_model",
 }
 
@@ -230,7 +235,7 @@ class ReleaseConsistencyTests(unittest.TestCase):
 
     def test_all_observed_solar_entity_ids_have_exact_migration_aliases(self) -> None:
         self.assertEqual(EXPECTED_SOLAR_ENTITY_ID_ALIASES, SOLAR_GENERATED_ENTITY_ID_ALIASES)
-        self.assertEqual(14, len(SOLAR_GENERATED_ENTITY_ID_ALIASES))
+        self.assertEqual(19, len(SOLAR_GENERATED_ENTITY_ID_ALIASES))
         init_source = (ROOT / "custom_components/dummy_os_data/__init__.py").read_text()
         for unique_id in EXPECTED_SOLAR_ENTITY_ID_ALIASES:
             self.assertIn(f'("sensor", "{unique_id}", "sensor.{unique_id}")', init_source)

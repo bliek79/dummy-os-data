@@ -260,7 +260,7 @@ class DummyOSSolarHorizonEvaluationSensor(DummyOSSolarBaseSensor):
         super().__init__(coordinator)
         self.horizon_hours = horizon_hours
         object_id = f"do_solar_evaluation_horizon_{horizon_hours}h"
-        self._attr_name = f"DO Solar Evaluation Horizon {horizon_hours}h"
+        self._attr_name = f"Solar Evaluation Horizon {horizon_hours}h"
         self._attr_unique_id = object_id
         self._attr_suggested_object_id = object_id
 
