@@ -1,4 +1,4 @@
-"""Sensors for Dummy OS Data."""
+"""Sensors for Dummy OS Forecast."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, FORECAST_SLOTS, NAME, QUARTER_MINUTES, VERSION
 from .coordinator import DummyOSHomeDataCoordinator
+from .degree_days_sensor import build_degree_days_sensors
 from .forecast import HomeBaselineForecast
 from .home_input_sensor import build_home_input_sensors
 from .solar_sensor import build_solar_sensors
@@ -34,7 +35,7 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up Dummy OS Data sensors."""
+    """Set up Dummy OS Forecast sensors."""
     coordinator: DummyOSHomeDataCoordinator = entry.runtime_data
     async_add_entities(
         [
@@ -68,12 +69,13 @@ async def async_setup_entry(
             DummyOSWeatherLastUpdateSensor(coordinator),
             DummyOSWeatherModelSensor(coordinator),
             *build_solar_sensors(coordinator),
+            *build_degree_days_sensors(coordinator),
         ]
     )
 
 
 class DummyOSBaseSensor(SensorEntity):
-    """Base sensor."""
+    """Base Energy Forecast sensor."""
 
     _attr_should_poll = False
 
@@ -89,7 +91,7 @@ class DummyOSBaseSensor(SensorEntity):
             identifiers={(DOMAIN, "main")},
             name=NAME,
             manufacturer="Dummy OS",
-            model="Data Forecast Platform",
+            model="Forecast Platform",
             sw_version=VERSION,
         )
 
@@ -117,9 +119,9 @@ class DummyOSBaseSensor(SensorEntity):
 
 
 class DummyOSActualQuarterSensor(DummyOSBaseSensor):
-    _attr_name = "Dummy OS Home Actual Quarter"
-    _attr_unique_id = "do_home_actual_quarter"
-    _attr_suggested_object_id = "do_home_actual_quarter"
+    _attr_name = "DO Energy Actual Quarter"
+    _attr_unique_id = "do_energy_actual_quarter"
+    _attr_suggested_object_id = "do_energy_actual_quarter"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_icon = "mdi:home-lightning-bolt-outline"
@@ -138,9 +140,9 @@ class DummyOSActualQuarterSensor(DummyOSBaseSensor):
 
 
 class DummyOSHistoryStatusSensor(DummyOSBaseSensor):
-    _attr_name = "Dummy OS Home History Status"
-    _attr_unique_id = "do_home_history_status"
-    _attr_suggested_object_id = "do_home_history_status"
+    _attr_name = "DO Energy History Status"
+    _attr_unique_id = "do_energy_history_status"
+    _attr_suggested_object_id = "do_energy_history_status"
     _attr_icon = "mdi:database-check-outline"
 
     @property
@@ -158,9 +160,9 @@ class DummyOSHistoryStatusSensor(DummyOSBaseSensor):
 
 
 class DummyOSHistoryDaysSensor(DummyOSBaseSensor):
-    _attr_name = "Dummy OS Home History Days"
-    _attr_unique_id = "do_home_history_days"
-    _attr_suggested_object_id = "do_home_history_days"
+    _attr_name = "DO Energy History Days"
+    _attr_unique_id = "do_energy_history_days"
+    _attr_suggested_object_id = "do_energy_history_days"
     _attr_native_unit_of_measurement = "d"
     _attr_icon = "mdi:calendar-clock-outline"
 
@@ -174,9 +176,9 @@ class DummyOSHistoryDaysSensor(DummyOSBaseSensor):
 
 
 class DummyOSForecastModelSensor(DummyOSBaseSensor):
-    _attr_name = "Dummy OS Home Forecast Model"
-    _attr_unique_id = "do_home_forecast_model"
-    _attr_suggested_object_id = "do_home_forecast_model"
+    _attr_name = "DO Energy Forecast Model"
+    _attr_unique_id = "do_energy_forecast_model"
+    _attr_suggested_object_id = "do_energy_forecast_model"
     _attr_icon = "mdi:chart-timeline-variant-shimmer"
 
     @property
@@ -190,9 +192,9 @@ class DummyOSForecastModelSensor(DummyOSBaseSensor):
 
 
 class DummyOSHomeForecastSensor(DummyOSBaseSensor):
-    _attr_name = "Dummy OS Home Forecast"
-    _attr_unique_id = "do_home_forecast"
-    _attr_suggested_object_id = "do_home_forecast"
+    _attr_name = "DO Energy Forecast"
+    _attr_unique_id = "do_energy_forecast"
+    _attr_suggested_object_id = "do_energy_forecast"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_icon = "mdi:home-clock-outline"
@@ -207,13 +209,13 @@ class DummyOSHomeForecastSensor(DummyOSBaseSensor):
         slots = self._forecast()
         populated = sum(1 for slot in slots if slot.energy_kwh is not None)
         supported = sum(1 for slot in slots if slot.source in SUPPORTED_SOURCES)
-        return {"profile": self.coordinator.profile, "model": "historical_baseline", "model_version": "0.4", "forecast_start": slots[0].start.isoformat() if slots else None, "resolution_minutes": 15, "horizon_hours": 72, "slot_count": len(slots), "populated_slots": populated, "supported_slots": supported, "coverage_percent": round(supported / len(slots) * 100, 1) if slots else 0.0, "average_confidence_percent": HomeBaselineForecast.average_confidence(slots), "timeline_entity": "sensor.do_home_forecast_timeline"}
+        return {"profile": self.coordinator.profile, "model": "historical_baseline", "model_version": "0.4", "forecast_start": slots[0].start.isoformat() if slots else None, "resolution_minutes": 15, "horizon_hours": 72, "slot_count": len(slots), "populated_slots": populated, "supported_slots": supported, "coverage_percent": round(supported / len(slots) * 100, 1) if slots else 0.0, "average_confidence_percent": HomeBaselineForecast.average_confidence(slots), "timeline_entity": "sensor.do_energy_forecast_timeline"}
 
 
 class DummyOSHomeForecastTimelineSensor(DummyOSBaseSensor):
-    _attr_name = "Dummy OS Home Forecast Timeline"
-    _attr_unique_id = "do_home_forecast_timeline"
-    _attr_suggested_object_id = "do_home_forecast_timeline"
+    _attr_name = "DO Energy Forecast Timeline"
+    _attr_unique_id = "do_energy_forecast_timeline"
+    _attr_suggested_object_id = "do_energy_forecast_timeline"
     _attr_icon = "mdi:chart-line"
     _unrecorded_attributes = frozenset({"points"})
 
@@ -229,9 +231,9 @@ class DummyOSHomeForecastTimelineSensor(DummyOSBaseSensor):
 
 
 class DummyOSHomeForecastNextQuarterSensor(DummyOSBaseSensor):
-    _attr_name = "Dummy OS Home Forecast Next Quarter"
-    _attr_unique_id = "do_home_forecast_next_quarter"
-    _attr_suggested_object_id = "do_home_forecast_next_quarter"
+    _attr_name = "DO Energy Forecast Next Quarter"
+    _attr_unique_id = "do_energy_forecast_next_quarter"
+    _attr_suggested_object_id = "do_energy_forecast_next_quarter"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_icon = "mdi:clock-fast"
@@ -251,9 +253,9 @@ class DummyOSHomeForecastNextQuarterSensor(DummyOSBaseSensor):
 
 
 class DummyOSHomeForecastCoverageSensor(DummyOSBaseSensor):
-    _attr_name = "Dummy OS Home Forecast Coverage"
-    _attr_unique_id = "do_home_forecast_coverage"
-    _attr_suggested_object_id = "do_home_forecast_coverage"
+    _attr_name = "DO Energy Forecast Coverage"
+    _attr_unique_id = "do_energy_forecast_coverage"
+    _attr_suggested_object_id = "do_energy_forecast_coverage"
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_icon = "mdi:chart-donut"
 
@@ -274,9 +276,9 @@ class DummyOSHomeForecastCoverageSensor(DummyOSBaseSensor):
 
 
 class DummyOSHomeForecastConfidenceSensor(DummyOSBaseSensor):
-    _attr_name = "Dummy OS Home Forecast Confidence"
-    _attr_unique_id = "do_home_forecast_confidence"
-    _attr_suggested_object_id = "do_home_forecast_confidence"
+    _attr_name = "DO Energy Forecast Confidence"
+    _attr_unique_id = "do_energy_forecast_confidence"
+    _attr_suggested_object_id = "do_energy_forecast_confidence"
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_icon = "mdi:shield-check-outline"
 
@@ -290,9 +292,9 @@ class DummyOSHomeForecastConfidenceSensor(DummyOSBaseSensor):
 
 
 class DummyOSHomeForecastModelHealthSensor(DummyOSBaseSensor):
-    _attr_name = "Dummy OS Home Forecast Model Health"
-    _attr_unique_id = "do_home_forecast_model_health"
-    _attr_suggested_object_id = "do_home_forecast_model_health"
+    _attr_name = "DO Energy Forecast Model Health"
+    _attr_unique_id = "do_energy_forecast_model_health"
+    _attr_suggested_object_id = "do_energy_forecast_model_health"
     _attr_icon = "mdi:heart-pulse"
 
     @property
@@ -331,9 +333,9 @@ class DummyOSEvaluationBaseSensor(DummyOSBaseSensor):
 
 
 class DummyOSHomeForecastAccuracySensor(DummyOSEvaluationBaseSensor):
-    _attr_name = "Dummy OS Home Forecast Accuracy"
-    _attr_unique_id = "do_home_forecast_accuracy"
-    _attr_suggested_object_id = "do_home_forecast_accuracy"
+    _attr_name = "DO Energy Forecast Accuracy"
+    _attr_unique_id = "do_energy_forecast_accuracy"
+    _attr_suggested_object_id = "do_energy_forecast_accuracy"
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_icon = "mdi:bullseye-arrow"
 
@@ -343,9 +345,9 @@ class DummyOSHomeForecastAccuracySensor(DummyOSEvaluationBaseSensor):
 
 
 class DummyOSHomeForecastMaeSensor(DummyOSEvaluationBaseSensor):
-    _attr_name = "Dummy OS Home Forecast MAE"
-    _attr_unique_id = "do_home_forecast_mae"
-    _attr_suggested_object_id = "do_home_forecast_mae"
+    _attr_name = "DO Energy Forecast MAE"
+    _attr_unique_id = "do_energy_forecast_mae"
+    _attr_suggested_object_id = "do_energy_forecast_mae"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_icon = "mdi:chart-bell-curve-cumulative"
@@ -356,9 +358,9 @@ class DummyOSHomeForecastMaeSensor(DummyOSEvaluationBaseSensor):
 
 
 class DummyOSHomeForecastBiasSensor(DummyOSEvaluationBaseSensor):
-    _attr_name = "Dummy OS Home Forecast Bias"
-    _attr_unique_id = "do_home_forecast_bias"
-    _attr_suggested_object_id = "do_home_forecast_bias"
+    _attr_name = "DO Energy Forecast Bias"
+    _attr_unique_id = "do_energy_forecast_bias"
+    _attr_suggested_object_id = "do_energy_forecast_bias"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_icon = "mdi:scale-balance"
@@ -369,9 +371,9 @@ class DummyOSHomeForecastBiasSensor(DummyOSEvaluationBaseSensor):
 
 
 class DummyOSHomeForecastEvaluationSamplesSensor(DummyOSEvaluationBaseSensor):
-    _attr_name = "Dummy OS Home Forecast Evaluation Samples"
-    _attr_unique_id = "do_home_forecast_evaluation_samples"
-    _attr_suggested_object_id = "do_home_forecast_evaluation_samples"
+    _attr_name = "DO Energy Forecast Evaluation Samples"
+    _attr_unique_id = "do_energy_forecast_evaluation_samples"
+    _attr_suggested_object_id = "do_energy_forecast_evaluation_samples"
     _attr_icon = "mdi:counter"
 
     @property
@@ -391,7 +393,7 @@ class DummyOSWeatherBaseSensor(SensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        return DeviceInfo(identifiers={(DOMAIN, "main")}, name=NAME, manufacturer="Dummy OS", model="Data Forecast Platform", sw_version=VERSION)
+        return DeviceInfo(identifiers={(DOMAIN, "main")}, name=NAME, manufacturer="Dummy OS", model="Forecast Platform", sw_version=VERSION)
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
