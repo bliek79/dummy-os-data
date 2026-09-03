@@ -51,6 +51,22 @@ _IDENTITY_MIGRATIONS: tuple[tuple[str, str, str, str], ...] = (
     ("select", "do_home_profile", "do_energy_profile", "select.do_energy_profile"),
 )
 
+# Direct runtime states from the old Degree Days publisher. The canonical
+# alpha.12 SensorEntity layer overwrites the six matching IDs; the four old
+# weighted/heat aliases must be removed explicitly during an integration reload.
+_DEGREE_DAYS_RUNTIME_STATE_ALIASES: tuple[str, ...] = (
+    "sensor.do_degree_days_status",
+    "sensor.do_degree_days_history_days",
+    "sensor.do_degree_days_temperature_daily",
+    "sensor.do_degree_days_daily",
+    "sensor.do_weighted_degree_days_daily",
+    "sensor.do_degree_days_reference_daily",
+    "sensor.do_weighted_degree_days_reference_daily",
+    "sensor.do_degree_days_difference",
+    "sensor.do_weighted_degree_days_difference",
+    "sensor.do_heat_degree_days_last_day",
+)
+
 # Stable namespaces still keep deterministic canonical entity IDs for older
 # automatically generated aliases from previous alphas.
 _ENTITY_ID_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
@@ -101,6 +117,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry) 
     """Set up Dummy OS Forecast from a config entry."""
     _async_remove_obsolete_home_input_entities(hass)
     _async_migrate_alpha12_identities(hass)
+    _async_remove_degree_days_runtime_states(hass)
     _async_migrate_generated_entity_ids(hass)
 
     if entry.title in {"Dummy OS", "Dummy OS Data"} and entry.title != NAME:
@@ -160,6 +177,18 @@ def _async_remove_obsolete_home_input_entities(hass: HomeAssistant) -> None:
             _LOGGER.info("Removed stale obsolete Home input state %s", alias_entity_id)
 
 
+def _async_remove_degree_days_runtime_states(hass: HomeAssistant) -> None:
+    """Remove only unregistered Degree Days states left by the old publisher."""
+    registry = er.async_get(hass)
+    for entity_id in _DEGREE_DAYS_RUNTIME_STATE_ALIASES:
+        if registry.async_get(entity_id) is not None:
+            continue
+        if hass.states.get(entity_id) is None:
+            continue
+        hass.states.async_remove(entity_id)
+        _LOGGER.info("Removed legacy Degree Days runtime state %s", entity_id)
+
+
 def _async_migrate_alpha12_identities(hass: HomeAssistant) -> None:
     """Rename known registry identities from Data/Home to Source/Energy."""
     registry = er.async_get(hass)
@@ -167,17 +196,6 @@ def _async_migrate_alpha12_identities(hass: HomeAssistant) -> None:
     for platform, old_unique_id, new_unique_id, target_entity_id in _IDENTITY_MIGRATIONS:
         current_entity_id = registry.async_get_entity_id(platform, DOMAIN, old_unique_id)
         if current_entity_id is None:
-            continue
-
-        automatically_named = current_entity_id == f"{platform}.{old_unique_id}"
-        if not automatically_named and not is_known_generated_entity_id(
-            platform, old_unique_id, current_entity_id
-        ):
-            _LOGGER.warning(
-                "Preserving user-renamed entity %s while alpha.12 changes unique ID %s",
-                current_entity_id,
-                old_unique_id,
-            )
             continue
 
         existing_target = registry.async_get(target_entity_id)
