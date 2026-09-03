@@ -1,4 +1,4 @@
-"""Release metadata and alpha.12.2 naming/registry consistency checks."""
+"""Release metadata and alpha.12.3 naming/registry consistency checks."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ SOLAR_GENERATED_ENTITY_ID_ALIASES = MIGRATION_MODULE.SOLAR_GENERATED_ENTITY_ID_A
 DEGREE_DAYS_GENERATED_ENTITY_ID_ALIASES = MIGRATION_MODULE.DEGREE_DAYS_GENERATED_ENTITY_ID_ALIASES
 OBSOLETE_HOME_INPUT_ENTITY_ALIASES = MIGRATION_MODULE.OBSOLETE_HOME_INPUT_ENTITY_ALIASES
 
-VERSION = "0.1.0-alpha.12.2"
+VERSION = "0.1.0-alpha.12.3"
 
 EXPECTED_SOLAR_ENTITY_ID_ALIASES = {
     "do_solar_status": "sensor.dummy_os_solar_source_status",
@@ -155,6 +155,13 @@ class ReleaseConsistencyTests(unittest.TestCase):
         for unique_id, entity_id in EXPECTED_DEGREE_DAYS_ENTITY_ID_ALIASES.items():
             self.assertTrue(MIGRATION_MODULE.is_known_generated_entity_id("sensor", unique_id, entity_id))
             self.assertFalse(MIGRATION_MODULE.is_known_generated_entity_id("sensor", unique_id, f"sensor.user_named_{unique_id}"))
+
+    def test_alpha12_degree_days_stale_states_are_explicitly_cleaned(self) -> None:
+        init_source = (ROOT / "custom_components/dummy_os_data/__init__.py").read_text()
+        for entity_id in EXPECTED_DEGREE_DAYS_ENTITY_ID_ALIASES.values():
+            self.assertIn(f'"{entity_id}"', init_source)
+        self.assertIn("if registry.async_get(entity_id) is not None:", init_source)
+        self.assertIn("hass.states.async_remove(entity_id)", init_source)
 
     def test_solar_and_weather_display_names_do_not_repeat_dummy_os(self) -> None:
         sensor_source = (ROOT / "custom_components/dummy_os_data/sensor.py").read_text()
