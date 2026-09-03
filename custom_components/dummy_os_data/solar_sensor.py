@@ -13,7 +13,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, FORECAST_SLOTS, NAME, SOLAR_MIN_VALID_COVERAGE, VERSION
-from .solar import OPEN_METEO_SOLAR_MODEL, SOLAR_RESOLUTION_MINUTES
+from .solar import OPEN_METEO_SOLAR_MODEL, SOLAR_HORIZON_HOURS, SOLAR_RESOLUTION_MINUTES
 
 
 def build_solar_sensors(coordinator) -> list[SensorEntity]:
@@ -32,6 +32,10 @@ def build_solar_sensors(coordinator) -> list[SensorEntity]:
         DummyOSSolarActualPowerSensor(coordinator, "south"),
         DummyOSSolarActualPowerSensor(coordinator, "total"),
         DummyOSSolarLastCompletedQuarterSensor(coordinator),
+        *[
+            DummyOSSolarHorizonEvaluationSensor(coordinator, horizon_hours)
+            for horizon_hours in SOLAR_HORIZON_HOURS
+        ],
         DummyOSSolarModelSensor(coordinator),
     ]
 
@@ -241,6 +245,43 @@ class DummyOSSolarLastCompletedQuarterSensor(DummyOSSolarBaseSensor):
         if evaluation is None:
             return {
                 "status": "waiting_for_first_completed_quarter",
+                "resolution_minutes": SOLAR_RESOLUTION_MINUTES,
+                "minimum_coverage_percent": SOLAR_MIN_VALID_COVERAGE * 100.0,
+            }
+        return dict(evaluation)
+
+
+class DummyOSSolarHorizonEvaluationSensor(DummyOSSolarBaseSensor):
+    """Expose the latest completed evaluation for one fixed forecast horizon."""
+
+    _attr_icon = "mdi:timeline-clock-outline"
+
+    def __init__(self, coordinator, horizon_hours: int) -> None:
+        super().__init__(coordinator)
+        self.horizon_hours = horizon_hours
+        object_id = f"do_solar_evaluation_horizon_{horizon_hours}h"
+        self._attr_name = f"Dummy OS Solar Evaluation Horizon {horizon_hours}h"
+        self._attr_unique_id = object_id
+        self._attr_suggested_object_id = object_id
+
+    def _evaluation(self) -> dict[str, Any] | None:
+        for evaluation in self.solar.last_horizon_evaluations:
+            if int(evaluation.get("horizon_hours", 0)) == self.horizon_hours:
+                return evaluation
+        return None
+
+    @property
+    def native_value(self) -> str | None:
+        evaluation = self._evaluation()
+        return evaluation.get("snapshot_id") if evaluation else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        evaluation = self._evaluation()
+        if evaluation is None:
+            return {
+                "status": "waiting_for_first_completed_horizon",
+                "horizon_hours": self.horizon_hours,
                 "resolution_minutes": SOLAR_RESOLUTION_MINUTES,
                 "minimum_coverage_percent": SOLAR_MIN_VALID_COVERAGE * 100.0,
             }
