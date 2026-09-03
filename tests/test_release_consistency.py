@@ -1,4 +1,4 @@
-"""Release metadata and alpha.12 naming/registry consistency checks."""
+"""Release metadata and alpha.12.1 naming/registry consistency checks."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ MIGRATION_SPEC.loader.exec_module(MIGRATION_MODULE)
 SOLAR_GENERATED_ENTITY_ID_ALIASES = MIGRATION_MODULE.SOLAR_GENERATED_ENTITY_ID_ALIASES
 OBSOLETE_HOME_INPUT_ENTITY_ALIASES = MIGRATION_MODULE.OBSOLETE_HOME_INPUT_ENTITY_ALIASES
 
-VERSION = "0.1.0-alpha.12"
+VERSION = "0.1.0-alpha.12.1"
 
 EXPECTED_SOLAR_ENTITY_ID_ALIASES = {
     "do_solar_status": "sensor.dummy_os_solar_source_status",
@@ -135,11 +135,24 @@ class ReleaseConsistencyTests(unittest.TestCase):
         init_source = (ROOT / "custom_components/dummy_os_data/__init__.py").read_text()
         for unique_id in EXPECTED_DEGREE_DAYS_IDS:
             self.assertIn(unique_id, entity_source)
+            self.assertIn(f'("sensor", "{unique_id}", "sensor.{unique_id}")', init_source)
         self.assertIn("*build_degree_days_sensors(coordinator)", sensor_platform)
         self.assertNotIn("hass.states.async_set", degree_source)
         self.assertIn("_DEGREE_DAYS_RUNTIME_STATE_ALIASES", init_source)
         self.assertIn('"sensor.do_weighted_degree_days_daily"', init_source)
         self.assertIn('"sensor.do_heat_degree_days_last_day"', init_source)
+        self.assertGreaterEqual(init_source.count("_async_remove_degree_days_runtime_states(hass)"), 2)
+        self.assertIn("hass.states.async_remove(current_entity_id)", init_source)
+
+    def test_solar_and_weather_display_names_do_not_repeat_dummy_os(self) -> None:
+        sensor_source = (ROOT / "custom_components/dummy_os_data/sensor.py").read_text()
+        solar_source = (ROOT / "custom_components/dummy_os_data/solar_sensor.py").read_text()
+        self.assertNotIn('"Dummy OS Weather ', sensor_source)
+        self.assertNotIn('f"Dummy OS Weather ', sensor_source)
+        self.assertNotIn('"Dummy OS Solar ', solar_source)
+        self.assertNotIn('f"Dummy OS Solar ', solar_source)
+        self.assertIn('f"DO Weather {label}"', sensor_source)
+        self.assertIn('"DO Solar Source Status"', solar_source)
 
     def test_identity_migrations_cover_all_source_energy_and_profile_entities(self) -> None:
         init_source = (ROOT / "custom_components/dummy_os_data/__init__.py").read_text()

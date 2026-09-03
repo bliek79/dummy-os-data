@@ -1,61 +1,25 @@
 # GitHub Release
 
-**Tag:** `0.1.0-alpha.12`
+**Tag:** `0.1.0-alpha.12.1`
 
-**Release title:** `Dummy OS Forecast 0.1.0-alpha.12 - Naming and Registry Migration`
+**Release title:** `Dummy OS Forecast 0.1.0-alpha.12.1 - Degree Days and Display Name Fix`
 
-## Dummy OS Forecast 0.1.0-alpha.12
+## Dummy OS Forecast 0.1.0-alpha.12.1
 
-Deze pre-release zet de publieke naam- en entiteitenstructuur van de forecastintegratie recht zonder de bestaande forecastberekeningen of de vaste tijdarchitectuur te veranderen.
+Deze gerichte pre-release herstelt twee live bevestigde migratieproblemen uit alpha.12. Forecastmodellen, bronformules en de vaste tijdarchitectuur worden niet inhoudelijk gewijzigd.
 
-### Integratienaam
+### Degree Days registry-fix
 
-- De zichtbare Home Assistant-integratienaam wordt **Dummy OS Forecast**.
-- Het technische Home Assistant-domain blijft bewust `dummy_os_data` om een onnodige domainmigratie te vermijden.
-- Bestaande automatisch aangemaakte config-entrytitel `Dummy OS` of `Dummy OS Data` wordt tijdens setup naar `Dummy OS Forecast` bijgewerkt; een handmatig aangepaste titel wordt niet overschreven.
+Alpha.12 maakte de nieuwe Degree Days `SensorEntity`-laag inhoudelijk correct aan, maar oude runtime-states konden de gewenste `sensor.do_degree_days_*` entity-ID's nog bezet houden. Home Assistant registreerde de nieuwe entiteiten daardoor onder namen zoals `sensor.dummy_os_forecast_do_degree_days_daily`.
 
-### Source-laag
+Alpha.12.1:
 
-De zeven bestaande `do_data_*`-bronsensoren worden gecontroleerd gemigreerd naar één vaste Source-namespace:
+- verwijdert oude ongeregistreerde Degree Days-runtime-states zowel vóór als na platformsetup;
+- migreert de tien geregistreerde Degree Days-unique IDs daarna expliciet naar hun canonieke entity-ID;
+- verwijdert de oude gegenereerde entity-state nadat de registry-ID is gemigreerd;
+- houdt de opgeslagen Degree Days-historie en berekeningen ongewijzigd.
 
-- `sensor.do_source_grid_net_power`
-- `sensor.do_source_grid_import_power`
-- `sensor.do_source_grid_export_power`
-- `sensor.do_source_solar_power`
-- `sensor.do_source_battery_charge_power`
-- `sensor.do_source_battery_discharge_power`
-- `sensor.do_source_home_power`
-
-De onderliggende vermogenslogica blijft gelijk. Netvermogen blijft positief voor import en negatief voor export; `unknown` en `unavailable` worden niet als nul geïnterpreteerd.
-
-### Energy Forecast
-
-De veertien bestaande `do_home_*`-forecast-/historie-/evaluatiesensoren worden naar `do_energy_*` gemigreerd:
-
-- `sensor.do_energy_actual_quarter`
-- `sensor.do_energy_history_status`
-- `sensor.do_energy_history_days`
-- `sensor.do_energy_forecast_model`
-- `sensor.do_energy_forecast`
-- `sensor.do_energy_forecast_timeline`
-- `sensor.do_energy_forecast_next_quarter`
-- `sensor.do_energy_forecast_coverage`
-- `sensor.do_energy_forecast_confidence`
-- `sensor.do_energy_forecast_model_health`
-- `sensor.do_energy_forecast_accuracy`
-- `sensor.do_energy_forecast_mae`
-- `sensor.do_energy_forecast_bias`
-- `sensor.do_energy_forecast_evaluation_samples`
-
-Ook de profielselect wordt consequent:
-
-- `select.do_energy_profile`
-
-De bestaande opgeslagen Energy/Home-forecastdata blijft dezelfde store gebruiken; dit is een identitymigratie en geen modelreset.
-
-### Degree Days
-
-Degree Days wordt niet langer alleen via losse `hass.states.async_set()`-states gepubliceerd. De laag krijgt tien normale geregistreerde `SensorEntity`-entiteiten onder Dummy OS Forecast:
+De vaste Degree Days-set is:
 
 - `sensor.do_degree_days_status`
 - `sensor.do_degree_days_history_days`
@@ -68,30 +32,39 @@ Degree Days wordt niet langer alleen via losse `hass.states.async_set()`-states 
 - `sensor.do_degree_days_weighted_difference`
 - `sensor.do_degree_days_last_day`
 
-Bekende oude losse Degree Days-runtime-states worden tijdens setup gericht verwijderd voordat de geregistreerde entiteiten worden opgebouwd.
+### Solar en Weather zichtbare namen
+
+De entity-ID's van Solar en Weather waren in alpha.12 correct, maar de entiteitsnaam bevatte nog `Dummy OS` terwijl het apparaat al `Dummy OS Forecast` heet. Daardoor ontstonden friendly names zoals `Dummy OS Forecast Dummy OS Solar ...`.
+
+Alpha.12.1 normaliseert de entiteitsnamen naar:
+
+- `DO Solar ...`
+- `DO Weather ...`
+
+Hierdoor voegt Home Assistant de apparaatnaam nog maar één keer toe. Entity-ID's, unique IDs en functionele states van Solar en Weather blijven ongewijzigd.
 
 ### Ongewijzigd
 
+- Integratienaam: **Dummy OS Forecast**.
+- Technisch domain: `dummy_os_data`.
+- Source blijft `do_source_*`.
+- Energy blijft `do_energy_*` plus `select.do_energy_profile`.
 - Solar blijft `do_solar_*`.
 - Weather blijft `do_weather_*`.
-- Prices blijft `do_prices_*` en wordt in deze release nog niet naar het entity registry omgebouwd.
+- Prices blijft `do_prices_*`.
 - Native architectuur blijft **15 minuten / 72 uur / 288 slots**.
-- Solar horizon-snapshots en de vijf horizon-evaluatiesensoren uit alpha.11.11 blijven intact.
-- Forecastmodellen, tariefberekeningen en fysieke bronformules worden door deze naam-/registryrelease niet inhoudelijk gewijzigd.
-- Er wordt geen EMS- of batterijactie aangestuurd.
+- Geen forecastmodel, tariefberekening, PV-formule, Energy Forecast-model of fysieke EMS-sturing is gewijzigd.
 
-### Migratiecontrole na installatie
+### Live controle na installatie
 
-Na installatie en een volledige Home Assistant-herstart moet expliciet worden gecontroleerd:
+Na installatie en een volledige Home Assistant-herstart:
 
-1. De integratie wordt zichtbaar als **Dummy OS Forecast** en draait versie `0.1.0-alpha.12`.
-2. Er zijn **65 geregistreerde entiteiten**: 64 sensors en 1 select.
-3. Prefixverdeling: 7 Source-sensors, 14 Energy-sensors + 1 Energy-select, 19 Solar-sensors, 14 Weather-sensors en 10 Degree Days-sensors.
-4. De oude `do_data_*`- en `do_home_*`-registry-entiteiten zijn niet als dubbele of verweesde entiteiten achtergebleven.
-5. De oude Degree Days-varianten `do_weighted_degree_days_*` en `do_heat_degree_days_last_day` zijn niet als losse reststates achtergebleven.
-6. Entity ID, unique ID en zichtbare naam sluiten per Source-, Energy- en Degree Days-entiteit op de nieuwe vaste naamstructuur aan.
-7. `sensor.do_source_home_power` levert dezelfde canonieke vermogensbalans als vóór de migratie en Energy Forecast blijft nieuwe kwartieren verwerken.
-8. Solar- en Weather-entiteiten blijven aanwezig met hun bestaande IDs en functionele states.
-9. De vijf Solar-horizon-evaluatiesensoren blijven ongewijzigd doorlopen.
+1. Controleer dat versie `0.1.0-alpha.12.1` draait onder **Dummy OS Forecast**.
+2. Controleer dat alle tien Degree Days-entiteiten exact `sensor.do_degree_days_*` gebruiken.
+3. Controleer dat geen `sensor.dummy_os_forecast_do_degree_days_*`-varianten meer aanwezig zijn.
+4. Controleer dat oude `sensor.do_weighted_degree_days_*`- en `sensor.do_heat_degree_days_last_day`-runtimevarianten niet als migratiedubbelen zijn achtergebleven.
+5. Controleer dat Solar en Weather hun bestaande entity-ID's behouden en de zichtbare naam niet langer dubbel `Dummy OS Forecast Dummy OS ...` bevat.
+6. Controleer Source en Energy opnieuw kort op hun reeds geslaagde alpha.12-migratie.
+7. Controleer dat Energy, Solar en Weather waar van toepassing nog steeds 15 minuten / 72 uur / 288 slots publiceren.
 
-Live functionele validatie in Home Assistant blijft vereist voordat de migratie als volledig bevestigd wordt beschouwd.
+Live Home Assistant-validatie blijft vereist voordat alpha.12.1 als volledig bevestigd wordt beschouwd.
