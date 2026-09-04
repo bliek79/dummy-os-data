@@ -142,18 +142,25 @@ class DummyOSHomeDataCoordinator:
         self._last_sample_time = now
         self._notify()
 
+    @staticmethod
+    def _quarter_boundary_utc(now: datetime) -> datetime:
+        """Normalize scheduler callback time to the exact 15-minute UTC boundary."""
+        now_utc = dt_util.as_utc(now)
+        minute = (now_utc.minute // 15) * 15
+        return now_utc.replace(minute=minute, second=0, microsecond=0)
+
     async def _async_quarter_boundary(self, now: datetime) -> None:
         """Finalize the completed quarter and freeze forecast for the new one."""
-        now_utc = dt_util.as_utc(now)
-        self._integrate_until(now_utc)
-        await self._finalize_quarter(now_utc)
-        self._start_new_quarter(now_utc)
+        boundary_utc = self._quarter_boundary_utc(now)
+        self._integrate_until(boundary_utc)
+        await self._finalize_quarter(boundary_utc)
+        self._start_new_quarter(boundary_utc)
         self._last_power_w = self._power_from_state(self.source_state)
-        self._last_sample_time = now_utc
+        self._last_sample_time = boundary_utc
         if self._quarter_start is not None:
             self._capture_forecast_for_slot_start(
                 self._quarter_start,
-                captured_at=now_utc,
+                captured_at=boundary_utc,
             )
         await self._async_save()
         self._notify()
@@ -265,7 +272,18 @@ class DummyOSHomeDataCoordinator:
             return
         try:
             forecast_kwh = float(snapshot["forecast_kwh"])
+            captured_at = datetime.fromisoformat(snapshot["captured_at"])
         except (KeyError, TypeError, ValueError):
+            return
+        if captured_at.tzinfo is None:
+            captured_at = captured_at.replace(tzinfo=dt_util.UTC)
+        captured_at = dt_util.as_utc(captured_at)
+        if captured_at > dt_util.as_utc(result.start):
+            _LOGGER.warning(
+                "Ignoring late Energy forecast snapshot for %s: captured at %s",
+                result.start.isoformat(),
+                captured_at.isoformat(),
+            )
             return
         error_kwh = forecast_kwh - result.energy_kwh
         self.evaluations.append(
@@ -274,11 +292,14 @@ class DummyOSHomeDataCoordinator:
                 "end": result.end.isoformat(),
                 "profile": result.profile,
                 "forecast_kwh": round(forecast_kwh, 6),
+                "forecast_captured_at": captured_at.isoformat(),
                 "actual_kwh": result.energy_kwh,
+                "actual_coverage": result.coverage,
                 "error_kwh": round(error_kwh, 6),
                 "absolute_error_kwh": round(abs(error_kwh), 6),
                 "source": snapshot.get("source"),
                 "confidence": snapshot.get("confidence"),
+                "sample_count": snapshot.get("sample_count"),
                 "model": snapshot.get("model"),
                 "model_version": snapshot.get("model_version"),
             }
