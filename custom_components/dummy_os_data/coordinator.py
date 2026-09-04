@@ -265,7 +265,18 @@ class DummyOSHomeDataCoordinator:
             return
         try:
             forecast_kwh = float(snapshot["forecast_kwh"])
+            captured_at = datetime.fromisoformat(snapshot["captured_at"])
         except (KeyError, TypeError, ValueError):
+            return
+        if captured_at.tzinfo is None:
+            captured_at = captured_at.replace(tzinfo=dt_util.UTC)
+        captured_at = dt_util.as_utc(captured_at)
+        if captured_at > dt_util.as_utc(result.start):
+            _LOGGER.warning(
+                "Ignoring late Energy forecast snapshot for %s: captured at %s",
+                result.start.isoformat(),
+                captured_at.isoformat(),
+            )
             return
         error_kwh = forecast_kwh - result.energy_kwh
         self.evaluations.append(
@@ -274,11 +285,14 @@ class DummyOSHomeDataCoordinator:
                 "end": result.end.isoformat(),
                 "profile": result.profile,
                 "forecast_kwh": round(forecast_kwh, 6),
+                "forecast_captured_at": captured_at.isoformat(),
                 "actual_kwh": result.energy_kwh,
+                "actual_coverage": result.coverage,
                 "error_kwh": round(error_kwh, 6),
                 "absolute_error_kwh": round(abs(error_kwh), 6),
                 "source": snapshot.get("source"),
                 "confidence": snapshot.get("confidence"),
+                "sample_count": snapshot.get("sample_count"),
                 "model": snapshot.get("model"),
                 "model_version": snapshot.get("model_version"),
             }
