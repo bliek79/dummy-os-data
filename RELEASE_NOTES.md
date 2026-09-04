@@ -1,26 +1,29 @@
 # GitHub Release
 
-**Tag:** `0.1.0-alpha.12.5`
+**Tag:** `0.1.0-alpha.12.6`
 
-**Release title:** `Dummy OS Forecast 0.1.0-alpha.12.5 - Solar Horizon Runtime & Identity Hotfix`
+**Release title:** `Dummy OS Forecast 0.1.0-alpha.12.6 - Energy Forward Evaluation Foundation`
 
-## Dummy OS Forecast 0.1.0-alpha.12.5
+## Dummy OS Forecast 0.1.0-alpha.12.6
 
-Gerichte hotfix voor Solar horizonvalidatie en de afgesproken canonieke entity-ID's.
+Gerichte uitbreiding voor Energy Forecast Stap 1: betrouwbare forward-looking evaluatie en duurzame evaluatiecontext.
 
-### Opgelost
-- Scheduler-latency wordt vóór horizoncapture teruggebracht naar de exacte 15-minuten boundary.
-- `pending_horizon_snapshot_count` wordt na capture bijgewerkt; `horizon_capture_boundary` wordt zichtbaar voor diagnose.
-- De vijf verkeerd automatisch gegenereerde horizon-IDs migreren veilig naar `sensor.do_solar_evaluation_horizon_1h`, `_6h`, `_24h`, `_48h`, `_72h`.
-- Zichtbare namen zijn opgeschoond naar `Dummy OS Forecast Solar Evaluation Horizon <h>h`.
-- Nieuwe regressietests bewaken runtime-boundary en alle vijf identity-contracten.
+### Toegevoegd / verbeterd
+- Energy-evaluatierecords bewaren nu `forecast_captured_at` zodat aantoonbaar blijft wanneer de gebruikte voorspelling is vastgelegd.
+- Energy-evaluatierecords bewaren nu `actual_coverage`, `sample_count`, `source`, `confidence`, `model` en `model_version` als duurzame context.
+- Forecastsnapshots die pas na de start van het te beoordelen kwartier zijn vastgelegd, worden geweigerd als geldig evaluatiepunt.
+- Scheduler-latency op de kwartiergrens wordt genormaliseerd naar de exacte 15-minuten boundary voordat actual-integratie, kwartierfinalisatie en forecastcapture plaatsvinden.
+- Nieuwe regressietests bewaken de forward-looking recordvelden, late-snapshotblokkade en boundary-normalisatie.
 
 ### Ongewijzigd
 - Native architectuur blijft 15 minuten / 72 uur / 288 slots.
-- Solar-model, Energy, Weather, Prices, Degree Days en fysieke EMS-sturing zijn functioneel ongewijzigd.
+- Canonieke Energy-entity-ID's blijven ongewijzigd; deze release voegt geen nieuwe Home Assistant-entiteiten toe.
+- Bestaande historische evaluatierecords blijven bruikbaar voor de huidige accuracy/MAE/bias-berekening.
+- Solar, Weather, Prices, Degree Days en fysieke EMS-sturing zijn functioneel ongewijzigd.
 
-### Live validatie
-1. Na installatie moeten alleen de canonieke `sensor.do_solar_evaluation_horizon_*` IDs overblijven.
-2. Na de eerstvolgende kwartiergrens moet `pending_horizon_snapshot_count` > 0 worden.
-3. Na minimaal 1 uur moet de 1h-sensor een echte `snapshot_id` krijgen.
-4. Daarna kan de Sheets-automation de eerste horizonregel exporteren.
+### Live validatie na installatie
+1. Controleer dat de bestaande `sensor.do_energy_*` entiteiten normaal blijven publiceren en de timeline 288 punten houdt.
+2. Laat minimaal één volledig kwartier na installatie verlopen.
+3. Controleer dat accuracy/MAE/bias en evaluation samples blijven oplopen zonder reset van de bestaande historie.
+4. Controleer in de persistente Energy-store of een nieuw evaluatierecord `forecast_captured_at`, `actual_coverage` en `sample_count` bevat.
+5. Bevestig dat `forecast_captured_at` niet later is dan de `start` van het geëvalueerde kwartier.
