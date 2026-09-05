@@ -1,31 +1,32 @@
 # GitHub Release
 
-**Tag:** `0.1.0-alpha.12.7`
+**Tag:** `0.1.0-alpha.12.8`
 
-**Release title:** `Dummy OS Forecast 0.1.0-alpha.12.7 - Energy Persistent Store Foundation`
+**Release title:** `Dummy OS Forecast 0.1.0-alpha.12.8 - Energy Daypart Quality Diagnostics`
 
-## Dummy OS Forecast 0.1.0-alpha.12.7
+## Dummy OS Forecast 0.1.0-alpha.12.8
 
-Gerichte uitbreiding voor Energy Forecast Stap 2: versieerbare persistente learning- en evaluatieopslag als basis voor restart- en restore-bestendigheid.
+Gerichte uitbreiding voor Energy Forecast Stap 3: observer-only kwaliteitsdiagnostiek per vast lokaal dagdeel.
 
 ### Toegevoegd / verbeterd
-- De bestaande Energy Store krijgt een expliciete `energy_store_schema_version` naast de Home Assistant Store-versie.
-- Nieuwe Energy-evaluatierecords krijgen `evaluation_schema_version` zodat toekomstige schema-evolutie gecontroleerd kan plaatsvinden.
-- Bestaande legacy Store-payloads zonder expliciete schema-aanduiding worden veilig als schema 0 ingelezen en in geheugen naar de huidige structuur genormaliseerd zonder historie te verliezen.
-- Onbekende toekomstige Energy Store-schema's worden geweigerd in plaats van stil teruggeschreven door oudere code.
-- De coordinator gebruikt de genormaliseerde payload bij het laden en schrijft de huidige Energy Store-schema-aanduiding bij iedere persistente save.
-- Gerichte regressietests bewaken legacy-upgrade, behoud van bestaande data, veilige defaults, toekomstig-schema-blokkade en coordinator-integratie.
+- Nieuwe canonieke sensor `sensor.do_energy_forecast_quality_by_daypart`.
+- Vaste lokale dagdelen: nacht 00:00-06:00, ochtend 06:00-12:00, middag 12:00-18:00 en avond 18:00-24:00.
+- Per dagdeel worden sample count, MAE, bias, evaluation coverage, accuracy en het aantal geldige actual-kwartieren berekend.
+- Diagnostiek blijft strikt gescheiden per actief profiel.
+- Status blijft `collecting` totdat ieder dagdeel minimaal 32 geldige evaluatiepunten heeft; daarna wordt de basis als voldoende beschouwd.
+- Evaluation coverage gebruikt geldige actual-kwartieren binnen hetzelfde profiel en dagdeel als noemer.
+- Lokale tijd- en DST-grenzen zijn expliciet afgedekt met regressietests.
+- Deterministische entity-identiteit en veilige migratie van automatisch gegenereerde aliases zijn opgenomen.
 
 ### Ongewijzigd
+- Deze release is observer-only: forecastwaarden, fallback-hiërarchie en confidence-logica worden niet aangepast.
 - Native architectuur blijft 15 minuten / 72 uur / 288 slots.
-- `STORAGE_VERSION = 1` en de bestaande Store-key blijven behouden; er is geen gedwongen Home Assistant Store-migratie nodig voor deze additieve stap.
-- Canonieke Energy-entity-ID's blijven ongewijzigd; deze release voegt geen nieuwe Home Assistant-entiteiten toe.
-- Bestaande records, forecast snapshots en evaluaties blijven behouden en bruikbaar.
+- Bestaande Energy-historie en evaluatiestore blijven leidend; er wordt geen parallelle historie opgebouwd.
 - Solar, Weather, Prices, Degree Days en fysieke EMS-sturing zijn functioneel ongewijzigd.
 
 ### Live validatie na installatie
-1. Controleer dat de bestaande `sensor.do_energy_*` entiteiten normaal blijven publiceren en de timeline 288 punten houdt.
-2. Controleer dat history days, valid quarters en evaluation samples niet resetten na installatie/herstart.
-3. Laat minimaal één volledig kwartier verlopen en bevestig dat nieuwe records en evaluaties blijven oplopen.
-4. Controleer dat de persistente Energy Store `energy_store_schema_version: 1` bevat en nieuwe evaluaties `evaluation_schema_version: 1` krijgen.
-5. Maak daarna een Home Assistant-back-up en herstel die gecontroleerd; bevestig dat dezelfde Energy-historie/evaluaties terugkomen en daarna verder oplopen. Pas na deze restore-proef is Stap 2 volledig live gevalideerd.
+1. Controleer dat `sensor.do_energy_forecast_quality_by_daypart` exact onder deze entity-ID verschijnt.
+2. Controleer dat de sensor het actieve profiel meldt en vier dagdelen bevat.
+3. Controleer per dagdeel sample count, MAE, bias, evaluation coverage, accuracy en valid actual quarters.
+4. Controleer dat de status bij onvoldoende basis `collecting` blijft en pas na minimaal 32 evaluatiepunten per dagdeel naar voldoende basis kan gaan.
+5. Bevestig dat de bestaande Energy forecast, confidence, fallback, timeline en 288-slot horizon ongewijzigd blijven functioneren.
