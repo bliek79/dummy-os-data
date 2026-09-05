@@ -1,32 +1,34 @@
 # GitHub Release
 
-**Tag:** `0.1.0-alpha.12.8`
+**Tag:** `0.1.0-alpha.12.9`
 
-**Release title:** `Dummy OS Forecast 0.1.0-alpha.12.8 - Energy Daypart Quality Diagnostics`
+**Release title:** `Dummy OS Forecast 0.1.0-alpha.12.9 - Energy Weekday Weekend Quality Diagnostics`
 
-## Dummy OS Forecast 0.1.0-alpha.12.8
+## Dummy OS Forecast 0.1.0-alpha.12.9
 
-Gerichte uitbreiding voor Energy Forecast Stap 3: observer-only kwaliteitsdiagnostiek per vast lokaal dagdeel.
+Gerichte uitbreiding voor Energy Forecast Stap 4: observer-only kwaliteitsdiagnostiek voor werkdagen versus weekenden.
 
 ### Toegevoegd / verbeterd
-- Nieuwe canonieke sensor `sensor.do_energy_forecast_quality_by_daypart`.
-- Vaste lokale dagdelen: nacht 00:00-06:00, ochtend 06:00-12:00, middag 12:00-18:00 en avond 18:00-24:00.
-- Per dagdeel worden sample count, MAE, bias, evaluation coverage, accuracy en het aantal geldige actual-kwartieren berekend.
+- Nieuwe canonieke sensor `sensor.do_energy_forecast_quality_by_day_type`.
+- Exacte indeling conform het bestaande forecastmodel: maandag-vrijdag = `weekday`, zaterdag-zondag = `weekend`, bepaald op lokale kwartierstart.
+- Per segment worden sample count, MAE, bias, evaluation coverage, accuracy en geldige actual-kwartieren gepubliceerd.
 - Diagnostiek blijft strikt gescheiden per actief profiel.
-- Status blijft `collecting` totdat ieder dagdeel minimaal 32 geldige evaluatiepunten heeft; daarna wordt de basis als voldoende beschouwd.
-- Evaluation coverage gebruikt geldige actual-kwartieren binnen hetzelfde profiel en dagdeel als noemer.
-- Lokale tijd- en DST-grenzen zijn expliciet afgedekt met regressietests.
-- Deterministische entity-identiteit en veilige migratie van automatisch gegenereerde aliases zijn opgenomen.
+- Beide segmenten vereisen minimaal 32 geldige forward-looking evaluatiepunten voor status `sufficient_basis`.
+- Evaluation coverage gebruikt geldige actual-kwartieren binnen hetzelfde profiel en dagtype als noemer.
+- Lokale kalendergrenzen en DST-classificatie zijn met regressietests afgedekt.
+- Deterministische entity-identiteit en migratie van automatisch gegenereerde alias-ID's zijn opgenomen.
 
 ### Ongewijzigd
-- Deze release is observer-only: forecastwaarden, fallback-hiërarchie en confidence-logica worden niet aangepast.
+- Observer-only: forecastwaarden, fallback-hiërarchie en confidence-logica worden niet aangepast.
 - Native architectuur blijft 15 minuten / 72 uur / 288 slots.
-- Bestaande Energy-historie en evaluatiestore blijven leidend; er wordt geen parallelle historie opgebouwd.
+- De bestaande persistente Energy-evaluatiehistorie blijft leidend; er wordt geen parallelle historie opgebouwd.
+- Stap 3 dagdeelkwaliteit blijft ongewijzigd functioneren.
 - Solar, Weather, Prices, Degree Days en fysieke EMS-sturing zijn functioneel ongewijzigd.
+- Feestdagen worden in deze stap niet als apart dagtype behandeld.
 
 ### Live validatie na installatie
-1. Controleer dat `sensor.do_energy_forecast_quality_by_daypart` exact onder deze entity-ID verschijnt.
-2. Controleer dat de sensor het actieve profiel meldt en vier dagdelen bevat.
-3. Controleer per dagdeel sample count, MAE, bias, evaluation coverage, accuracy en valid actual quarters.
-4. Controleer dat de status bij onvoldoende basis `collecting` blijft en pas na minimaal 32 evaluatiepunten per dagdeel naar voldoende basis kan gaan.
-5. Bevestig dat de bestaande Energy forecast, confidence, fallback, timeline en 288-slot horizon ongewijzigd blijven functioneren.
+1. Controleer dat `sensor.do_energy_forecast_quality_by_day_type` exact onder deze entity-ID verschijnt.
+2. Controleer dat de sensor het actieve profiel meldt en de segmenten `weekday` en `weekend` bevat.
+3. Controleer per segment sample count, MAE, bias, evaluation coverage, accuracy en valid actual quarters.
+4. Controleer dat status pas `sufficient_basis` wordt wanneer beide segmenten minimaal 32 evaluatiepunten bevatten.
+5. Bevestig dat `sensor.do_energy_forecast_quality_by_daypart` en de bestaande 288-slot Energy Forecast ongewijzigd blijven functioneren.
