@@ -16,7 +16,7 @@ from homeassistant.util import dt as dt_util
 from .const import DOMAIN, FORECAST_SLOTS, NAME, QUARTER_MINUTES, VERSION
 from .coordinator import DummyOSHomeDataCoordinator
 from .degree_days_sensor import build_degree_days_sensors
-from .evaluation import calculate_day_type_daypart_quality, calculate_day_type_quality, calculate_daypart_quality, calculate_hour_quality
+from .evaluation import calculate_day_type_daypart_quality, calculate_day_type_quality, calculate_daypart_quality, calculate_hour_quality, calculate_peak_learning
 from .forecast import HomeBaselineForecast
 from .home_input_sensor import build_home_input_sensors
 from .solar_sensor import build_solar_sensors
@@ -59,6 +59,7 @@ async def async_setup_entry(
             DummyOSHomeForecastQualityByDayTypeSensor(coordinator),
             DummyOSHomeForecastQualityByDayTypeAndDaypartSensor(coordinator),
             DummyOSHomeForecastQualityByHourSensor(coordinator),
+            DummyOSEnergyPeakLearningSensor(coordinator),
             DummyOSWeatherCurrentSensor(coordinator, "temperature_2m", "Temperature", "°C", "mdi:thermometer", SensorDeviceClass.TEMPERATURE),
             DummyOSWeatherCurrentSensor(coordinator, "apparent_temperature", "Apparent Temperature", "°C", "mdi:thermometer-lines", SensorDeviceClass.TEMPERATURE),
             DummyOSWeatherCurrentSensor(coordinator, "relative_humidity_2m", "Relative Humidity", "%", "mdi:water-percent", SensorDeviceClass.HUMIDITY),
@@ -608,3 +609,43 @@ class DummyOSWeatherModelSensor(DummyOSWeatherBaseSensor):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {"provider": "Open-Meteo", "resolution_minutes": 15, "horizon_hours": 72, "forecast_slots": FORECAST_SLOTS, "current_variables": list(self.weather.current.keys()), "timeline_fields": list(POINT_FIELDS), "daily_days": len(self.weather.daily), "generation_time_ms": self.weather.generation_time_ms}
+
+
+class DummyOSEnergyPeakLearningSensor(DummyOSBaseSensor):
+    """Observer-only Step 6 Energy peak learning diagnostics."""
+
+    _attr_name = "DO Energy Peak Learning"
+    _attr_unique_id = "dummy_os_data_energy_peak_learning"
+    _attr_suggested_object_id = "do_energy_peak_learning"
+    _attr_icon = "mdi:chart-bell-curve-cumulative"
+    _unrecorded_attributes = frozenset({"calibration", "classifications", "events"})
+
+    def _result(self) -> dict[str, Any]:
+        return calculate_peak_learning(self.coordinator.evaluations, self.coordinator.profile, dt_util.as_local)
+
+    @property
+    def native_value(self) -> str:
+        return str(self._result()["status"])
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        result = self._result()
+        return {
+            "schema_version": result["schema_version"],
+            "algorithm_version": result["algorithm_version"],
+            "profile": result["profile"],
+            "observer_only": True,
+            "forecast_influence_enabled": False,
+            "ready_for_model_influence": False,
+            "minimum_samples_per_hour": result["minimum_samples_per_hour"],
+            "minimum_distinct_days_per_hour": result["minimum_distinct_days_per_hour"],
+            "threshold_method": result["threshold_method"],
+            "threshold_quantile": result["threshold_quantile"],
+            "candidate_count": result["candidate_count"],
+            "event_count": result["event_count"],
+            "calibrated_hours": result["calibrated_hours"],
+            "protected_windows": result["protected_windows"],
+            "calibration": result["calibration"],
+            "classifications": result["classifications"],
+            "events": result["events"],
+        }

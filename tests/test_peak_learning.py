@@ -1,6 +1,4 @@
-from pathlib import Path
-
-Path('tests/test_peak_learning.py').write_text(r'''import importlib.util
+import importlib.util
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -121,16 +119,3 @@ def test_sensor_identity_contract():
     assert '_attr_suggested_object_id = "do_energy_peak_learning"' in text
     assert 'DummyOSEnergyPeakLearningSensor(coordinator)' in text
     assert '_unrecorded_attributes = frozenset({"calibration", "classifications", "events"})' in text
-''')
-
-release_test = Path('tests/test_release_consistency.py')
-text = release_test.read_text()
-text = text.replace('VERSION = "0.1.0-alpha.12.11"', 'VERSION = "0.1.0-alpha.12.12"')
-needle = '    "do_energy_forecast_quality_by_hour",\n)'
-replacement = '    "do_energy_forecast_quality_by_hour",\n    "dummy_os_data_energy_peak_learning",\n)'
-if needle in text:
-    text = text.replace(needle, replacement, 1)
-text = text.replace('self.assertEqual(18, sum(sensor_source.count(f\'_attr_unique_id = "{unique_id}"\') for unique_id in EXPECTED_ENERGY_IDS))', 'self.assertEqual(19, sum(sensor_source.count(f\'_attr_unique_id = "{unique_id}"\') for unique_id in EXPECTED_ENERGY_IDS))')
-release_test.write_text(text)
-
-Path('RELEASE_NOTES.md').write_text('''# GitHub Release\n\n**Tag:** `0.1.0-alpha.12.12`  \n**Release title:** Dummy OS Forecast 0.1.0-alpha.12.12 - Energy Peak Learning Observer\n\n## Dummy OS Forecast 0.1.0-alpha.12.12\n\nObserver-only implementatie van Energy Forecast Stap 6D. De nieuwe laag detecteert en classificeert piekgedrag uit de bestaande forward-looking Energy-evaluatiehistorie zonder de forecast zelf te wijzigen.\n\n### Nieuw\n- Canonieke Home Assistant-entiteit `sensor.do_energy_peak_learning`.\n- `unique_id`: `dummy_os_data_energy_peak_learning`.\n- `suggested_object_id`: `do_energy_peak_learning`.\n- Kandidaatpiekdetectie op positieve residual `actual_kwh - forecast_kwh`.\n- Leave-one-local-day-out kalibratie met minimum 32 geldige kwartieren en 8 verschillende lokale dagen per uur.\n- Exact aangrenzende kandidaatkwartieren worden tot een event samengevoegd; gaten worden niet overbrugd en een event mag een uurgrens passeren.\n- Observer-only classificaties `incidental`, `structural`, `shifting_structural_grill` en `unresolved`.\n- Het venster 17:00-18:00 heeft vaste bescherming `no_exact_quarter_structural`.\n\n### Identity / migratie / cleanup\n- Nieuwe entiteit; er bestaat geen oudere canonical identity die gemigreerd moet worden.\n- Er is geen gegenereerde alias bedoeld. Na installatie moet de entity registry exact `sensor.do_energy_peak_learning` bevatten; een afwijkende suffix/alias geldt als migratie- of cleanupafwijking.\n- Detailattributen `calibration`, `classifications` en `events` zijn uitgesloten van Recorder.\n\n### Ongewijzigd\n- Native architectuur blijft exact 15 minuten / 72 uur / 288 slots.\n- `forecast.py` en forecastwaarden worden niet gewijzigd.\n- Geen planner-, execution-, confidence-, recency-, fallback- of Stap-7 time-windowinvloed.\n- Normal en Away blijven strikt gescheiden.\n- Missing, unavailable en niet-berekende kalibratiewaarden blijven `null` en worden nooit stilzwijgend `0`.\n\n### Validatie\n- Contracttests voor minimum databasis, profielscheiding en null-semantiek.\n- Expliciete leave-one-day-out-test.\n- Eventtests voor adjacency, geen gap-bridging en uurgrensoverschrijding.\n- Beschermingstest voor 17:00-18:00.\n- Identity-contracttest voor unique_id/suggested_object_id/registratie.\n- Regressietest voor 15 minuten / 72 uur / 288 slots.\n- Volledige bestaande testsuite, Python compile en manifest JSON-validatie vóór merge.\n- Na installatie live valideren dat `sensor.do_energy_peak_learning` exact onder de canonical entity_id verschijnt en observer-only blijft.\n''')
