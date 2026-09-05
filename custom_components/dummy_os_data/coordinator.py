@@ -15,12 +15,15 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CANONICAL_HOME_POWER_ENTITY,
+    ENERGY_EVALUATION_SCHEMA_VERSION,
+    ENERGY_STORE_SCHEMA_VERSION,
     MAX_HISTORY_DAYS,
     MIN_VALID_COVERAGE,
     PROFILE_NORMAL,
     STORAGE_KEY,
     STORAGE_VERSION,
 )
+from .energy_store import normalize_energy_store_payload
 from .evaluation import calculate_metrics
 from .forecast import ForecastSlot, HomeBaselineForecast
 from .weather import DummyOSWeatherCoordinator
@@ -76,7 +79,11 @@ class DummyOSHomeDataCoordinator:
 
     async def async_setup(self) -> None:
         """Load storage and start Home and Weather listeners."""
-        stored = await self.store.async_load() or {}
+        stored = normalize_energy_store_payload(
+            await self.store.async_load(),
+            current_schema_version=ENERGY_STORE_SCHEMA_VERSION,
+            default_profile=PROFILE_NORMAL,
+        )
         self.profile = stored.get("profile", PROFILE_NORMAL)
         self.records = stored.get("records", [])
         self.forecast_snapshots = stored.get("forecast_snapshots", {})
@@ -288,6 +295,7 @@ class DummyOSHomeDataCoordinator:
         error_kwh = forecast_kwh - result.energy_kwh
         self.evaluations.append(
             {
+                "evaluation_schema_version": ENERGY_EVALUATION_SCHEMA_VERSION,
                 "start": result.start.isoformat(),
                 "end": result.end.isoformat(),
                 "profile": result.profile,
@@ -317,6 +325,7 @@ class DummyOSHomeDataCoordinator:
     async def _async_save(self) -> None:
         await self.store.async_save(
             {
+                "energy_store_schema_version": ENERGY_STORE_SCHEMA_VERSION,
                 "profile": self.profile,
                 "records": self.records,
                 "forecast_snapshots": self.forecast_snapshots,

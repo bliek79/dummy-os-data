@@ -109,3 +109,11 @@ def test_step2_constants_keep_native_storage_and_forecast_contracts():
     assert "FORECAST_HORIZON_HOURS = 72" in const
     assert "FORECAST_SLOTS = FORECAST_HORIZON_HOURS * 60 // QUARTER_MINUTES" in const
     assert "MIN_VALID_COVERAGE = 0.90" in const
+
+def test_coordinator_uses_versioned_energy_store_contract():
+    coordinator = (ROOT / "custom_components/dummy_os_data/coordinator.py").read_text()
+    assert "ENERGY_STORE_SCHEMA_VERSION" in coordinator
+    assert "ENERGY_EVALUATION_SCHEMA_VERSION" in coordinator
+    assert "normalize_energy_store_payload(" in coordinator
+    assert '"energy_store_schema_version": ENERGY_STORE_SCHEMA_VERSION' in coordinator
+    assert '"evaluation_schema_version": ENERGY_EVALUATION_SCHEMA_VERSION' in coordinator
