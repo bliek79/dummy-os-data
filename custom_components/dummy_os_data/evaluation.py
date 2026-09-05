@@ -163,3 +163,32 @@ def calculate_daypart_quality(
         "observer_only": True,
         "dayparts": result,
     }
+
+
+DAY_TYPE_MINIMUM_SAMPLES = 32
+DAY_TYPES: tuple[str, str] = ("weekday", "weekend")
+
+def _day_type_for_local_start(local_start) -> str:
+    return "weekend" if local_start.weekday() >= 5 else "weekday"
+
+def calculate_day_type_quality(evaluations: list[dict[str, Any]], records: list[dict[str, Any]], profile: str, localize) -> dict[str, Any]:
+    valid_actual_counts = {name: 0 for name in DAY_TYPES}
+    selected = {name: [] for name in DAY_TYPES}
+    for record in records:
+        if record.get("profile") != profile or record.get("valid") is not True: continue
+        start = _parse_aware_start(record.get("start"))
+        if start is not None: valid_actual_counts[_day_type_for_local_start(localize(start))] += 1
+    for item in evaluations:
+        if item.get("profile") != profile: continue
+        start = _parse_aware_start(item.get("start"))
+        if start is None: continue
+        try: float(item["actual_kwh"]); float(item["forecast_kwh"])
+        except (KeyError, TypeError, ValueError): continue
+        selected[_day_type_for_local_start(localize(start))].append(item)
+    result = {}; all_sufficient = True
+    for name in DAY_TYPES:
+        metrics = calculate_metrics(selected[name], profile=None); samples = int(metrics["samples"]); denominator = valid_actual_counts[name]
+        coverage = round(min(100.0, samples / denominator * 100.0), 1) if denominator > 0 else None
+        status = "sufficient_basis" if samples >= DAY_TYPE_MINIMUM_SAMPLES else "collecting"; all_sufficient = all_sufficient and status == "sufficient_basis"
+        result[name] = {"status": status, "sample_count": samples, "mae_kwh": metrics["mae_kwh"], "bias_kwh": metrics["bias_kwh"], "evaluation_coverage_percent": coverage, "accuracy_percent": metrics["accuracy_percent"], "valid_actual_quarters": denominator}
+    return {"profile": profile, "status": "sufficient_basis" if all_sufficient else "collecting", "minimum_samples_for_sufficient_basis": DAY_TYPE_MINIMUM_SAMPLES, "observer_only": True, "day_types": result}
