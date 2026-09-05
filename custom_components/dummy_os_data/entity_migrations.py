@@ -42,6 +42,7 @@ DEGREE_DAYS_GENERATED_ENTITY_ID_ALIASES: dict[str, str] = {
 ENERGY_GENERATED_ENTITY_ID_ALIASES: dict[str, str] = {
     "do_energy_forecast_quality_by_daypart": "sensor.dummy_os_forecast_do_energy_forecast_quality_by_daypart",
     "do_energy_forecast_quality_by_day_type": "sensor.dummy_os_forecast_do_energy_forecast_quality_by_day_type",
+    "do_energy_forecast_quality_by_day_type_and_daypart": "sensor.dummy_os_forecast_do_energy_forecast_quality_by_day_type_and_daypart",
 }
 
 OBSOLETE_HOME_INPUT_ENTITY_ALIASES: dict[str, set[str]] = {
