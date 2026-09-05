@@ -57,3 +57,109 @@ def calculate_metrics(
         "actual_total_kwh": round(actual_total, 6),
         "forecast_total_kwh": round(forecast_total, 6),
     }
+
+DAYPART_MINIMUM_SAMPLES = 32
+DAYPARTS: tuple[tuple[str, int, int], ...] = (
+    ("night", 0, 6),
+    ("morning", 6, 12),
+    ("afternoon", 12, 18),
+    ("evening", 18, 24),
+)
+
+
+def _parse_aware_start(value: Any):
+    """Parse an ISO timestamp and require timezone information."""
+    from datetime import datetime
+
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed
+
+
+def _daypart_for_local_start(local_start) -> str:
+    """Return the fixed Step 3 daypart for a local quarter start."""
+    hour = local_start.hour
+    if hour < 6:
+        return "night"
+    if hour < 12:
+        return "morning"
+    if hour < 18:
+        return "afternoon"
+    return "evening"
+
+
+def calculate_daypart_quality(
+    evaluations: list[dict[str, Any]],
+    records: list[dict[str, Any]],
+    profile: str,
+    localize,
+) -> dict[str, Any]:
+    """Calculate observer-only forecast quality per fixed local daypart.
+
+    Evaluation coverage is the number of usable forward-looking
+    evaluations divided by valid actual quarters for the same profile
+    and daypart. Invalid/missing values are never reconstructed as zero.
+    """
+    valid_actual_counts = {name: 0 for name, _, _ in DAYPARTS}
+    selected = {name: [] for name, _, _ in DAYPARTS}
+
+    for record in records:
+        if record.get("profile") != profile or record.get("valid") is not True:
+            continue
+        start = _parse_aware_start(record.get("start"))
+        if start is None:
+            continue
+        daypart = _daypart_for_local_start(localize(start))
+        valid_actual_counts[daypart] += 1
+
+    for item in evaluations:
+        if item.get("profile") != profile:
+            continue
+        start = _parse_aware_start(item.get("start"))
+        if start is None:
+            continue
+        try:
+            float(item["actual_kwh"])
+            float(item["forecast_kwh"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        daypart = _daypart_for_local_start(localize(start))
+        selected[daypart].append(item)
+
+    result: dict[str, Any] = {}
+    all_sufficient = True
+    for name, start_hour, end_hour in DAYPARTS:
+        metrics = calculate_metrics(selected[name], profile=None)
+        samples = int(metrics["samples"])
+        denominator = valid_actual_counts[name]
+        coverage = None
+        if denominator > 0:
+            coverage = round(min(100.0, samples / denominator * 100.0), 1)
+        status = "sufficient_basis" if samples >= DAYPART_MINIMUM_SAMPLES else "collecting"
+        if status != "sufficient_basis":
+            all_sufficient = False
+        result[name] = {
+            "start_local": f"{start_hour:02d}:00",
+            "end_local": f"{end_hour:02d}:00",
+            "status": status,
+            "sample_count": samples,
+            "mae_kwh": metrics["mae_kwh"],
+            "bias_kwh": metrics["bias_kwh"],
+            "evaluation_coverage_percent": coverage,
+            "accuracy_percent": metrics["accuracy_percent"],
+            "valid_actual_quarters": denominator,
+        }
+
+    return {
+        "profile": profile,
+        "status": "sufficient_basis" if all_sufficient else "collecting",
+        "minimum_samples_for_sufficient_basis": DAYPART_MINIMUM_SAMPLES,
+        "observer_only": True,
+        "dayparts": result,
+    }
