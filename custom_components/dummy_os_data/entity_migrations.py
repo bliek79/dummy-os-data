@@ -38,6 +38,11 @@ DEGREE_DAYS_GENERATED_ENTITY_ID_ALIASES: dict[str, str] = {
     "do_degree_days_last_day": "sensor.dummy_os_forecast_do_degree_days_last_day",
 }
 
+
+ENERGY_GENERATED_ENTITY_ID_ALIASES: dict[str, str] = {
+    "do_energy_forecast_quality_by_daypart": "sensor.dummy_os_forecast_do_energy_forecast_quality_by_daypart",
+}
+
 OBSOLETE_HOME_INPUT_ENTITY_ALIASES: dict[str, set[str]] = {
     "do_input_home_power_raw": {
         "sensor.dummy_os_input_home_power_raw",
@@ -76,6 +81,8 @@ def is_known_generated_entity_id(platform: str, unique_id: str, entity_id: str) 
     if entity_id == SOLAR_GENERATED_ENTITY_ID_ALIASES.get(unique_id):
         return True
     if entity_id == DEGREE_DAYS_GENERATED_ENTITY_ID_ALIASES.get(unique_id):
+        return True
+    if entity_id == ENERGY_GENERATED_ENTITY_ID_ALIASES.get(unique_id):
         return True
     if entity_id in OBSOLETE_HOME_INPUT_ENTITY_ALIASES.get(unique_id, set()):
         return True

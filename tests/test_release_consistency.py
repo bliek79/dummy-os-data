@@ -67,6 +67,7 @@ EXPECTED_ENERGY_IDS = (
     "do_energy_forecast_mae",
     "do_energy_forecast_bias",
     "do_energy_forecast_evaluation_samples",
+    "do_energy_forecast_quality_by_daypart",
 )
 
 EXPECTED_DEGREE_DAYS_IDS = (
@@ -131,7 +132,7 @@ class ReleaseConsistencyTests(unittest.TestCase):
         select_source = (ROOT / "custom_components/dummy_os_data/select.py").read_text()
         for unique_id in EXPECTED_ENERGY_IDS:
             self.assertIn(f'_attr_unique_id = "{unique_id}"', sensor_source)
-        self.assertEqual(14, sum(sensor_source.count(f'_attr_unique_id = "{unique_id}"') for unique_id in EXPECTED_ENERGY_IDS))
+        self.assertEqual(15, sum(sensor_source.count(f'_attr_unique_id = "{unique_id}"') for unique_id in EXPECTED_ENERGY_IDS))
         self.assertIn('_attr_unique_id = "do_energy_profile"', select_source)
         self.assertIn('_attr_name = "DO Energy Profile"', select_source)
         self.assertIn('("select", "do_home_profile", "do_energy_profile", "select.do_energy_profile")', init_source)
