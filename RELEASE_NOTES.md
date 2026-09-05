@@ -14,7 +14,7 @@ Observer-only implementatie van Energy Forecast Stap 6D. De nieuwe laag detectee
 - Kandidaatpiekdetectie op positieve residual `actual_kwh - forecast_kwh`.
 - Leave-one-local-day-out kalibratie met minimum 32 geldige kwartieren en 8 verschillende lokale dagen per uur.
 - Exact aangrenzende kandidaatkwartieren worden tot een event samengevoegd; gaten worden niet overbrugd en een event mag een uurgrens passeren.
-- Observer-only classificaties `incidental`, `structural`, `shifting_structural_grill` en `unresolved`.
+- Observer-only classificaties `incidental`, `structural`, `shifting_structural_grill` en `unresolved`; recurrence- en timinggrenzen worden uit de beschikbare historie gekalibreerd en niet als vaste woning-specifieke waarden ingevoerd.
 - Het venster 17:00-18:00 heeft vaste bescherming `no_exact_quarter_structural`.
 
 ### Identity / migratie / cleanup
@@ -30,7 +30,8 @@ Observer-only implementatie van Energy Forecast Stap 6D. De nieuwe laag detectee
 - Missing, unavailable en niet-berekende kalibratiewaarden blijven `null` en worden nooit stilzwijgend `0`.
 
 ### Validatie
-- Contracttests voor minimum databasis, profielscheiding en null-semantiek.
+- Contracttests voor minimum databasis, profielscheiding, null-semantiek en ontbrekende coverage.
+- Deterministische calibration fingerprint en historie-afgeleide classificatiegrenzen.
 - Expliciete leave-one-day-out-test.
 - Eventtests voor adjacency, geen gap-bridging en uurgrensoverschrijding.
 - Beschermingstest voor 17:00-18:00.

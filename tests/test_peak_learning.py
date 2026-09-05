@@ -119,3 +119,29 @@ def test_sensor_identity_contract():
     assert '_attr_suggested_object_id = "do_energy_peak_learning"' in text
     assert 'DummyOSEnergyPeakLearningSensor(coordinator)' in text
     assert '_unrecorded_attributes = frozenset({"calibration", "classifications", "events"})' in text
+
+
+
+def test_missing_actual_coverage_is_not_assumed_valid():
+    start = datetime(2026, 8, 1, 17, 0, tzinfo=timezone.utc)
+    rows = flat_basis(8, 17)
+    rows[0].pop('actual_coverage')
+    result = module.calculate_peak_learning(rows, 'normal', localize)
+    assert result['calibration']['hour_17']['sample_count'] == 31
+    assert result['calibration']['hour_17']['status'] == 'collecting'
+
+
+def test_calibration_fingerprint_is_deterministic():
+    rows = flat_basis(9, 17)
+    first = module.calculate_peak_learning(rows, 'normal', localize)
+    second = module.calculate_peak_learning(rows, 'normal', localize)
+    assert first['calibration_fingerprint'] == second['calibration_fingerprint']
+    assert len(first['calibration_fingerprint']) == 16
+
+
+def test_classification_thresholds_are_history_derived_or_null():
+    result = module.calculate_peak_learning(flat_basis(9, 17), 'normal', localize)
+    calibration = result['classification_calibration']
+    assert calibration['basis'] == 'median_of_repeating_ready_hours'
+    assert calibration['repeat_rate_threshold'] is None
+    assert calibration['timing_mad_threshold_minutes'] is None

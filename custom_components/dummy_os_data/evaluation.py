@@ -286,9 +286,6 @@ def calculate_hour_quality(evaluations: list[dict[str, Any]], records: list[dict
 PEAK_MINIMUM_SAMPLES_PER_HOUR = 32
 PEAK_MINIMUM_DISTINCT_DAYS_PER_HOUR = 8
 PEAK_THRESHOLD_QUANTILE = 0.90
-PEAK_STRUCTURAL_MIN_EVENT_DAYS = 4
-PEAK_STRUCTURAL_MIN_REPEAT_RATE = 0.35
-PEAK_STABLE_TIMING_MAD_MINUTES = 15.0
 PEAK_GRILL_WINDOW_START_HOUR = 17
 
 
@@ -329,7 +326,7 @@ def calculate_peak_learning(evaluations: list[dict[str, Any]], profile: str, loc
         try:
             actual = float(item["actual_kwh"])
             forecast = float(item["forecast_kwh"])
-            coverage = float(item.get("actual_coverage", 1.0))
+            coverage = float(item["actual_coverage"])
         except (KeyError, TypeError, ValueError):
             continue
         if coverage < 0.90:
@@ -376,7 +373,7 @@ def calculate_peak_learning(evaluations: list[dict[str, Any]], profile: str, loc
     candidates.sort(key=lambda row: row["start"])
     merged = []
     for row in candidates:
-        if merged and merged[-1]["end"] == row["start"] and merged[-1]["local_date"] == row["local_date"]:
+        if merged and merged[-1]["end"] == row["start"]:
             merged[-1]["end"] = row["end"]
             merged[-1]["quarters"].append(row)
         else:
@@ -409,7 +406,9 @@ def calculate_peak_learning(evaluations: list[dict[str, Any]], profile: str, loc
         if start is not None:
             groups[localize(start).hour].append(event)
 
-    classifications = {}
+    group_metrics: dict[int, dict[str, Any]] = {}
+    repeat_rates_for_calibration: list[float] = []
+    timing_mads_for_calibration: list[float] = []
     for hour in range(24):
         days = {row["local_date"] for row in by_hour[hour]}
         hour_events = groups[hour]
@@ -417,21 +416,48 @@ def calculate_peak_learning(evaluations: list[dict[str, Any]], profile: str, loc
         repeat_rate = len(event_days) / len(days) if days else None
         centers = [event["center_minute_of_day"] for event in hour_events if event["center_minute_of_day"] is not None]
         timing_mad = _timing_mad_minutes(centers)
+        group_metrics[hour] = {
+            "event_count": len(hour_events),
+            "event_days": len(event_days),
+            "observed_days": len(days),
+            "repeat_rate": repeat_rate,
+            "timing_mad_minutes": timing_mad,
+        }
+        # A single event is by definition not repetition. Numeric separation
+        # between low/high recurrence is calibrated from the observed history.
+        if hour_ready[hour] and len(event_days) >= 2 and repeat_rate is not None:
+            repeat_rates_for_calibration.append(repeat_rate)
+            if timing_mad is not None:
+                timing_mads_for_calibration.append(timing_mad)
+
+    repeat_rate_threshold = _median(repeat_rates_for_calibration)
+    timing_mad_threshold = _median(timing_mads_for_calibration)
+    classifications = {}
+    for hour in range(24):
+        metrics = group_metrics[hour]
+        repeat_rate = metrics["repeat_rate"]
+        timing_mad = metrics["timing_mad_minutes"]
         if not hour_ready[hour]:
             classification = "unresolved"
-        elif len(event_days) < PEAK_STRUCTURAL_MIN_EVENT_DAYS or (repeat_rate or 0.0) < PEAK_STRUCTURAL_MIN_REPEAT_RATE:
+        elif metrics["event_days"] < 2:
+            classification = "incidental"
+        elif repeat_rate_threshold is None:
+            classification = "unresolved"
+        elif repeat_rate is None or repeat_rate < repeat_rate_threshold:
             classification = "incidental"
         elif hour == PEAK_GRILL_WINDOW_START_HOUR:
             classification = "shifting_structural_grill"
-        elif timing_mad is not None and timing_mad <= PEAK_STABLE_TIMING_MAD_MINUTES:
+        elif timing_mad_threshold is None or timing_mad is None:
+            classification = "unresolved"
+        elif timing_mad <= timing_mad_threshold:
             classification = "structural"
         else:
             classification = "shifting_structural_grill"
         classifications[f"hour_{hour:02d}"] = {
             "classification": classification,
-            "event_count": len(hour_events),
-            "event_days": len(event_days),
-            "observed_days": len(days),
+            "event_count": metrics["event_count"],
+            "event_days": metrics["event_days"],
+            "observed_days": metrics["observed_days"],
             "repeat_rate": round(repeat_rate, 4) if repeat_rate is not None else None,
             "timing_mad_minutes": round(timing_mad, 1) if timing_mad is not None else None,
             "protected_window": hour == PEAK_GRILL_WINDOW_START_HOUR,
@@ -445,9 +471,28 @@ def calculate_peak_learning(evaluations: list[dict[str, Any]], profile: str, loc
     else:
         status = "calibrated_observer_only"
 
+    from hashlib import sha256
+    from json import dumps
+    source_basis = {
+        "evaluation_count": len(prepared),
+        "first_start": min((row["start"] for row in prepared), default=None).isoformat() if prepared else None,
+        "last_start": max((row["start"] for row in prepared), default=None).isoformat() if prepared else None,
+    }
+    fingerprint_payload = {
+        "algorithm_version": "peak_observer_v1",
+        "profile": profile,
+        "source_basis": source_basis,
+        "calibration": calibration,
+        "repeat_rate_threshold": repeat_rate_threshold,
+        "timing_mad_threshold": timing_mad_threshold,
+    }
+    calibration_fingerprint = sha256(dumps(fingerprint_payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:16]
+
     return {
         "schema_version": 1,
         "algorithm_version": "peak_observer_v1",
+        "calibration_fingerprint": calibration_fingerprint,
+        "source_basis": source_basis,
         "profile": profile,
         "status": status,
         "observer_only": True,
@@ -460,6 +505,11 @@ def calculate_peak_learning(evaluations: list[dict[str, Any]], profile: str, loc
         "candidate_count": len(candidates),
         "event_count": len(events),
         "calibrated_hours": calibrated_hours,
+        "classification_calibration": {
+            "repeat_rate_threshold": round(repeat_rate_threshold, 4) if repeat_rate_threshold is not None else None,
+            "timing_mad_threshold_minutes": round(timing_mad_threshold, 1) if timing_mad_threshold is not None else None,
+            "basis": "median_of_repeating_ready_hours",
+        },
         "calibration": calibration,
         "classifications": classifications,
         "protected_windows": {"17:00-18:00": {"policy": "no_exact_quarter_structural", "forced_classification_when_repeating": "shifting_structural_grill"}},

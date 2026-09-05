@@ -633,6 +633,8 @@ class DummyOSEnergyPeakLearningSensor(DummyOSBaseSensor):
         return {
             "schema_version": result["schema_version"],
             "algorithm_version": result["algorithm_version"],
+            "calibration_fingerprint": result["calibration_fingerprint"],
+            "source_basis": result["source_basis"],
             "profile": result["profile"],
             "observer_only": True,
             "forecast_influence_enabled": False,
@@ -644,6 +646,7 @@ class DummyOSEnergyPeakLearningSensor(DummyOSBaseSensor):
             "candidate_count": result["candidate_count"],
             "event_count": result["event_count"],
             "calibrated_hours": result["calibrated_hours"],
+            "classification_calibration": result["classification_calibration"],
             "protected_windows": result["protected_windows"],
             "calibration": result["calibration"],
             "classifications": result["classifications"],
