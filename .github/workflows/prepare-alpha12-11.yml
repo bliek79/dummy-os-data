@@ -1,10 +1,15 @@
 name: Prepare alpha.12.11
+
 on:
   push:
-    branches: [release-alpha12-11]
-    paths: [.github/workflows/prepare-alpha12-11.yml]
+    branches:
+      - release-alpha12-11
+    paths:
+      - .github/workflows/prepare-alpha12-11.yml
+
 permissions:
   contents: write
+
 jobs:
   prepare:
     runs-on: ubuntu-latest
@@ -21,16 +26,16 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import json
-          version='0.1.0-alpha.12.11'
-          p=Path('custom_components/dummy_os_data/const.py')
-          s=p.read_text().replace('VERSION = "0.1.0-alpha.12.10"', f'VERSION = "{version}"')
-          p.write_text(s)
-          p=Path('custom_components/dummy_os_data/manifest.json')
-          d=json.loads(p.read_text()); d['version']=version; p.write_text(json.dumps(d, indent=2)+"\n")
-          p=Path('tests/test_release_consistency.py')
-          s=p.read_text().replace('VERSION = "0.1.0-alpha.12.10"', f'VERSION = "{version}"')
-          p.write_text(s)
-          Path('RELEASE_NOTES.md').write_text('''# GitHub Release
+          version = '0.1.0-alpha.12.11'
+          p = Path('custom_components/dummy_os_data/const.py')
+          p.write_text(p.read_text().replace('VERSION = "0.1.0-alpha.12.10"', f'VERSION = "{version}"'))
+          p = Path('custom_components/dummy_os_data/manifest.json')
+          data = json.loads(p.read_text())
+          data['version'] = version
+          p.write_text(json.dumps(data, indent=2) + '\n')
+          p = Path('tests/test_release_consistency.py')
+          p.write_text(p.read_text().replace('VERSION = "0.1.0-alpha.12.10"', f'VERSION = "{version}"'))
+          notes = '''# GitHub Release
 
 **Tag:** `0.1.0-alpha.12.11`
 
@@ -43,7 +48,7 @@ Gerichte observer-only uitbreiding om de zwakke middagforecast per afzonderlijk 
 ### Toegevoegd / verbeterd
 - Nieuwe canonieke sensor `sensor.do_energy_forecast_quality_by_hour`.
 - Exacte `unique_id` en `suggested_object_id`: `do_energy_forecast_quality_by_hour`.
-- Uitsplitsing van de middag in zes lokale uren: 12:00-13:00, 13:00-14:00, 14:00-15:00, 15:00-16:00, 16:00-17:00 en 17:00-18:00.
+- Zes lokale middaguren van 12:00-13:00 tot en met 17:00-18:00.
 - Per uur: sample count, MAE, bias, evaluation coverage, accuracy en geldige actual-kwartieren.
 - Indeling op lokale kwartierstart en strikt per actief profiel.
 - Minimum 32 geldige forward-looking evaluatiepunten per uur voor `sufficient_basis`; totaalstatus pas voldoende als alle zes uren voldoende basis hebben.
@@ -62,7 +67,8 @@ Gerichte observer-only uitbreiding om de zwakke middagforecast per afzonderlijk 
 4. Vergelijk MAE, bias en accuracy per uur en bepaal het sterkst afwijkende uur.
 5. Controleer coverage, sample count en valid actual quarters per uur.
 6. Bevestig dat bestaande Energy Forecast-sensoren en 288-slot forecast ongewijzigd blijven functioneren.
-''')
+'''
+          Path('RELEASE_NOTES.md').write_text(notes)
           PY
       - name: Test
         run: |
