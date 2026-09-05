@@ -16,7 +16,7 @@ from homeassistant.util import dt as dt_util
 from .const import DOMAIN, FORECAST_SLOTS, NAME, QUARTER_MINUTES, VERSION
 from .coordinator import DummyOSHomeDataCoordinator
 from .degree_days_sensor import build_degree_days_sensors
-from .evaluation import calculate_daypart_quality
+from .evaluation import calculate_day_type_quality, calculate_daypart_quality
 from .forecast import HomeBaselineForecast
 from .home_input_sensor import build_home_input_sensors
 from .solar_sensor import build_solar_sensors
@@ -56,6 +56,7 @@ async def async_setup_entry(
             DummyOSHomeForecastBiasSensor(coordinator),
             DummyOSHomeForecastEvaluationSamplesSensor(coordinator),
             DummyOSHomeForecastQualityByDaypartSensor(coordinator),
+            DummyOSHomeForecastQualityByDayTypeSensor(coordinator),
             DummyOSWeatherCurrentSensor(coordinator, "temperature_2m", "Temperature", "°C", "mdi:thermometer", SensorDeviceClass.TEMPERATURE),
             DummyOSWeatherCurrentSensor(coordinator, "apparent_temperature", "Apparent Temperature", "°C", "mdi:thermometer-lines", SensorDeviceClass.TEMPERATURE),
             DummyOSWeatherCurrentSensor(coordinator, "relative_humidity_2m", "Relative Humidity", "%", "mdi:water-percent", SensorDeviceClass.HUMIDITY),
@@ -443,6 +444,20 @@ class DummyOSHomeForecastQualityByDaypartSensor(DummyOSBaseSensor):
             "daypart_basis": "local_quarter_start",
             "dayparts": quality["dayparts"],
         }
+
+
+class DummyOSHomeForecastQualityByDayTypeSensor(DummyOSBaseSensor):
+    _attr_name = "DO Energy Forecast Quality By Day Type"
+    _attr_unique_id = "do_energy_forecast_quality_by_day_type"
+    _attr_suggested_object_id = "do_energy_forecast_quality_by_day_type"
+    _attr_icon = "mdi:calendar-week"
+    @property
+    def _quality(self) -> dict[str, Any]: return calculate_day_type_quality(self.coordinator.evaluations, self.coordinator.records, self.coordinator.profile, dt_util.as_local)
+    @property
+    def native_value(self) -> str: return str(self._quality["status"])
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        q=self._quality; return {"profile":q["profile"],"observer_only":True,"resolution_minutes":15,"minimum_samples_for_sufficient_basis":q["minimum_samples_for_sufficient_basis"],"day_type_basis":"local_quarter_start_weekday_weekend","day_types":q["day_types"]}
 
 
 class DummyOSWeatherCurrentSensor(DummyOSWeatherBaseSensor):
