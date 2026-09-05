@@ -192,3 +192,34 @@ def calculate_day_type_quality(evaluations: list[dict[str, Any]], records: list[
         status = "sufficient_basis" if samples >= DAY_TYPE_MINIMUM_SAMPLES else "collecting"; all_sufficient = all_sufficient and status == "sufficient_basis"
         result[name] = {"status": status, "sample_count": samples, "mae_kwh": metrics["mae_kwh"], "bias_kwh": metrics["bias_kwh"], "evaluation_coverage_percent": coverage, "accuracy_percent": metrics["accuracy_percent"], "valid_actual_quarters": denominator}
     return {"profile": profile, "status": "sufficient_basis" if all_sufficient else "collecting", "minimum_samples_for_sufficient_basis": DAY_TYPE_MINIMUM_SAMPLES, "observer_only": True, "day_types": result}
+
+
+DAY_TYPE_DAYPART_MINIMUM_SAMPLES = 32
+DAY_TYPE_DAYPART_KEYS: tuple[str, ...] = tuple(f"{day_type}_{daypart}" for day_type in DAY_TYPES for daypart, _, _ in DAYPARTS)
+
+def calculate_day_type_daypart_quality(evaluations: list[dict[str, Any]], records: list[dict[str, Any]], profile: str, localize) -> dict[str, Any]:
+    """Calculate observer-only Energy quality per day-type/daypart combination."""
+    valid_actual_counts = {key: 0 for key in DAY_TYPE_DAYPART_KEYS}
+    selected = {key: [] for key in DAY_TYPE_DAYPART_KEYS}
+    for record in records:
+        if record.get("profile") != profile or record.get("valid") is not True: continue
+        start = _parse_aware_start(record.get("start"))
+        if start is None: continue
+        local_start = localize(start); key = f"{_day_type_for_local_start(local_start)}_{_daypart_for_local_start(local_start)}"
+        valid_actual_counts[key] += 1
+    for item in evaluations:
+        if item.get("profile") != profile: continue
+        start = _parse_aware_start(item.get("start"))
+        if start is None: continue
+        try: float(item["actual_kwh"]); float(item["forecast_kwh"])
+        except (KeyError, TypeError, ValueError): continue
+        local_start = localize(start); key = f"{_day_type_for_local_start(local_start)}_{_daypart_for_local_start(local_start)}"
+        selected[key].append(item)
+    result = {}; all_sufficient = True
+    for key in DAY_TYPE_DAYPART_KEYS:
+        metrics = calculate_metrics(selected[key], profile=None); samples = int(metrics["samples"]); denominator = valid_actual_counts[key]
+        coverage = round(min(100.0, samples / denominator * 100.0), 1) if denominator > 0 else None
+        status = "sufficient_basis" if samples >= DAY_TYPE_DAYPART_MINIMUM_SAMPLES else "collecting"
+        all_sufficient = all_sufficient and status == "sufficient_basis"
+        result[key] = {"status": status, "sample_count": samples, "mae_kwh": metrics["mae_kwh"], "bias_kwh": metrics["bias_kwh"], "evaluation_coverage_percent": coverage, "accuracy_percent": metrics["accuracy_percent"], "valid_actual_quarters": denominator}
+    return {"profile": profile, "status": "sufficient_basis" if all_sufficient else "collecting", "minimum_samples_for_sufficient_basis": DAY_TYPE_DAYPART_MINIMUM_SAMPLES, "observer_only": True, "combinations": result}
