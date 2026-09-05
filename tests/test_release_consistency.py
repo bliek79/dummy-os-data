@@ -18,7 +18,7 @@ SOLAR_GENERATED_ENTITY_ID_ALIASES = MIGRATION_MODULE.SOLAR_GENERATED_ENTITY_ID_A
 DEGREE_DAYS_GENERATED_ENTITY_ID_ALIASES = MIGRATION_MODULE.DEGREE_DAYS_GENERATED_ENTITY_ID_ALIASES
 OBSOLETE_HOME_INPUT_ENTITY_ALIASES = MIGRATION_MODULE.OBSOLETE_HOME_INPUT_ENTITY_ALIASES
 
-VERSION = "0.1.0-alpha.12.11"
+VERSION = "0.1.0-alpha.12.12"
 
 EXPECTED_SOLAR_ENTITY_ID_ALIASES = {
     "do_solar_status": "sensor.dummy_os_solar_source_status",
@@ -71,6 +71,7 @@ EXPECTED_ENERGY_IDS = (
     "do_energy_forecast_quality_by_day_type",
     "do_energy_forecast_quality_by_day_type_and_daypart",
     "do_energy_forecast_quality_by_hour",
+    "dummy_os_data_energy_peak_learning",
 )
 
 EXPECTED_DEGREE_DAYS_IDS = (
@@ -135,7 +136,7 @@ class ReleaseConsistencyTests(unittest.TestCase):
         select_source = (ROOT / "custom_components/dummy_os_data/select.py").read_text()
         for unique_id in EXPECTED_ENERGY_IDS:
             self.assertIn(f'_attr_unique_id = "{unique_id}"', sensor_source)
-        self.assertEqual(18, sum(sensor_source.count(f'_attr_unique_id = "{unique_id}"') for unique_id in EXPECTED_ENERGY_IDS))
+        self.assertEqual(19, sum(sensor_source.count(f'_attr_unique_id = "{unique_id}"') for unique_id in EXPECTED_ENERGY_IDS))
         self.assertIn('_attr_unique_id = "do_energy_profile"', select_source)
         self.assertIn('_attr_name = "DO Energy Profile"', select_source)
         self.assertIn('("select", "do_home_profile", "do_energy_profile", "select.do_energy_profile")', init_source)

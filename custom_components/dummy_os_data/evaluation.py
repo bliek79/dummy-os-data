@@ -280,3 +280,238 @@ def calculate_hour_quality(evaluations: list[dict[str, Any]], records: list[dict
         "scope": "afternoon_12_18",
         "hours": result,
     }
+
+
+# STEP6D_PEAK_LEARNING_OBSERVER_V1
+PEAK_MINIMUM_SAMPLES_PER_HOUR = 32
+PEAK_MINIMUM_DISTINCT_DAYS_PER_HOUR = 8
+PEAK_THRESHOLD_QUANTILE = 0.90
+PEAK_GRILL_WINDOW_START_HOUR = 17
+
+
+def _quantile(values: list[float], q: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    position = (len(ordered) - 1) * q
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    fraction = position - lower
+    return ordered[lower] * (1.0 - fraction) + ordered[upper] * fraction
+
+
+def _median(values: list[float]) -> float | None:
+    return _quantile(values, 0.5)
+
+
+def _timing_mad_minutes(event_centers: list[float]) -> float | None:
+    center = _median(event_centers)
+    if center is None:
+        return None
+    return _median([abs(value - center) for value in event_centers])
+
+
+def calculate_peak_learning(evaluations: list[dict[str, Any]], profile: str, localize) -> dict[str, Any]:
+    """Return observer-only Step 6 peak calibration and classification."""
+    prepared: list[dict[str, Any]] = []
+    for item in evaluations:
+        if item.get("profile") != profile:
+            continue
+        start = _parse_aware_start(item.get("start"))
+        end = _parse_aware_start(item.get("end"))
+        if start is None or end is None:
+            continue
+        try:
+            actual = float(item["actual_kwh"])
+            forecast = float(item["forecast_kwh"])
+            coverage = float(item["actual_coverage"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if coverage < 0.90:
+            continue
+        local_start = localize(start)
+        prepared.append({
+            "start": start,
+            "end": end,
+            "local_start": local_start,
+            "local_date": local_start.date().isoformat(),
+            "local_hour": local_start.hour,
+            "positive_residual_kwh": max(actual - forecast, 0.0),
+        })
+
+    by_hour = {hour: [] for hour in range(24)}
+    for row in prepared:
+        by_hour[row["local_hour"]].append(row)
+
+    calibration = {}
+    hour_ready = {}
+    for hour in range(24):
+        rows = by_hour[hour]
+        days = {row["local_date"] for row in rows}
+        ready = len(rows) >= PEAK_MINIMUM_SAMPLES_PER_HOUR and len(days) >= PEAK_MINIMUM_DISTINCT_DAYS_PER_HOUR
+        hour_ready[hour] = ready
+        threshold = _quantile([row["positive_residual_kwh"] for row in rows], PEAK_THRESHOLD_QUANTILE) if ready else None
+        calibration[f"hour_{hour:02d}"] = {
+            "status": "calibrated" if ready else "collecting",
+            "sample_count": len(rows),
+            "distinct_days": len(days),
+            "threshold_kwh": round(threshold, 6) if threshold is not None else None,
+        }
+
+    candidates = []
+    for row in prepared:
+        comparison_rows = [other for other in by_hour[row["local_hour"]] if other["local_date"] != row["local_date"]]
+        comparison_days = {other["local_date"] for other in comparison_rows}
+        if len(comparison_rows) < PEAK_MINIMUM_SAMPLES_PER_HOUR or len(comparison_days) < PEAK_MINIMUM_DISTINCT_DAYS_PER_HOUR:
+            continue
+        threshold = _quantile([other["positive_residual_kwh"] for other in comparison_rows], PEAK_THRESHOLD_QUANTILE)
+        if threshold is not None and row["positive_residual_kwh"] > threshold:
+            candidates.append({**row, "threshold_kwh": threshold})
+
+    candidates.sort(key=lambda row: row["start"])
+    merged = []
+    for row in candidates:
+        if merged and merged[-1]["end"] == row["start"]:
+            merged[-1]["end"] = row["end"]
+            merged[-1]["quarters"].append(row)
+        else:
+            merged.append({"start": row["start"], "end": row["end"], "local_date": row["local_date"], "quarters": [row]})
+
+    events = []
+    for event in merged:
+        quarters = event["quarters"]
+        residuals = [q["positive_residual_kwh"] for q in quarters]
+        total = sum(residuals)
+        weighted_center = None
+        if total > 0:
+            weighted_center = sum((q["local_start"].hour * 60 + q["local_start"].minute + 7.5) * q["positive_residual_kwh"] for q in quarters) / total
+        peak = max(quarters, key=lambda q: q["positive_residual_kwh"])
+        events.append({
+            "start": event["start"].isoformat(),
+            "end": event["end"].isoformat(),
+            "local_date": event["local_date"],
+            "quarter_count": len(quarters),
+            "duration_minutes": len(quarters) * 15,
+            "extra_energy_kwh": round(total, 6),
+            "max_positive_residual_kwh": round(peak["positive_residual_kwh"], 6),
+            "peak_quarter_start": peak["start"].isoformat(),
+            "center_minute_of_day": round(weighted_center, 1) if weighted_center is not None else None,
+        })
+
+    groups = {hour: [] for hour in range(24)}
+    for event in events:
+        start = _parse_aware_start(event["start"])
+        if start is not None:
+            groups[localize(start).hour].append(event)
+
+    group_metrics: dict[int, dict[str, Any]] = {}
+    repeat_rates_for_calibration: list[float] = []
+    timing_mads_for_calibration: list[float] = []
+    for hour in range(24):
+        days = {row["local_date"] for row in by_hour[hour]}
+        hour_events = groups[hour]
+        event_days = {event["local_date"] for event in hour_events}
+        repeat_rate = len(event_days) / len(days) if days else None
+        centers = [event["center_minute_of_day"] for event in hour_events if event["center_minute_of_day"] is not None]
+        timing_mad = _timing_mad_minutes(centers)
+        group_metrics[hour] = {
+            "event_count": len(hour_events),
+            "event_days": len(event_days),
+            "observed_days": len(days),
+            "repeat_rate": repeat_rate,
+            "timing_mad_minutes": timing_mad,
+        }
+        # A single event is by definition not repetition. Numeric separation
+        # between low/high recurrence is calibrated from the observed history.
+        if hour_ready[hour] and len(event_days) >= 2 and repeat_rate is not None:
+            repeat_rates_for_calibration.append(repeat_rate)
+            if timing_mad is not None:
+                timing_mads_for_calibration.append(timing_mad)
+
+    repeat_rate_threshold = _median(repeat_rates_for_calibration)
+    timing_mad_threshold = _median(timing_mads_for_calibration)
+    classifications = {}
+    for hour in range(24):
+        metrics = group_metrics[hour]
+        repeat_rate = metrics["repeat_rate"]
+        timing_mad = metrics["timing_mad_minutes"]
+        if not hour_ready[hour]:
+            classification = "unresolved"
+        elif metrics["event_days"] < 2:
+            classification = "incidental"
+        elif repeat_rate_threshold is None:
+            classification = "unresolved"
+        elif repeat_rate is None or repeat_rate < repeat_rate_threshold:
+            classification = "incidental"
+        elif hour == PEAK_GRILL_WINDOW_START_HOUR:
+            classification = "shifting_structural_grill"
+        elif timing_mad_threshold is None or timing_mad is None:
+            classification = "unresolved"
+        elif timing_mad <= timing_mad_threshold:
+            classification = "structural"
+        else:
+            classification = "shifting_structural_grill"
+        classifications[f"hour_{hour:02d}"] = {
+            "classification": classification,
+            "event_count": metrics["event_count"],
+            "event_days": metrics["event_days"],
+            "observed_days": metrics["observed_days"],
+            "repeat_rate": round(repeat_rate, 4) if repeat_rate is not None else None,
+            "timing_mad_minutes": round(timing_mad, 1) if timing_mad is not None else None,
+            "protected_window": hour == PEAK_GRILL_WINDOW_START_HOUR,
+        }
+
+    calibrated_hours = sum(hour_ready.values())
+    if not prepared or calibrated_hours == 0:
+        status = "collecting"
+    elif calibrated_hours < 24:
+        status = "calibrating"
+    else:
+        status = "calibrated_observer_only"
+
+    from hashlib import sha256
+    from json import dumps
+    source_basis = {
+        "evaluation_count": len(prepared),
+        "first_start": min((row["start"] for row in prepared), default=None).isoformat() if prepared else None,
+        "last_start": max((row["start"] for row in prepared), default=None).isoformat() if prepared else None,
+    }
+    fingerprint_payload = {
+        "algorithm_version": "peak_observer_v1",
+        "profile": profile,
+        "source_basis": source_basis,
+        "calibration": calibration,
+        "repeat_rate_threshold": repeat_rate_threshold,
+        "timing_mad_threshold": timing_mad_threshold,
+    }
+    calibration_fingerprint = sha256(dumps(fingerprint_payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:16]
+
+    return {
+        "schema_version": 1,
+        "algorithm_version": "peak_observer_v1",
+        "calibration_fingerprint": calibration_fingerprint,
+        "source_basis": source_basis,
+        "profile": profile,
+        "status": status,
+        "observer_only": True,
+        "forecast_influence_enabled": False,
+        "ready_for_model_influence": False,
+        "minimum_samples_per_hour": PEAK_MINIMUM_SAMPLES_PER_HOUR,
+        "minimum_distinct_days_per_hour": PEAK_MINIMUM_DISTINCT_DAYS_PER_HOUR,
+        "threshold_method": "leave_one_local_day_out_positive_residual_quantile",
+        "threshold_quantile": PEAK_THRESHOLD_QUANTILE,
+        "candidate_count": len(candidates),
+        "event_count": len(events),
+        "calibrated_hours": calibrated_hours,
+        "classification_calibration": {
+            "repeat_rate_threshold": round(repeat_rate_threshold, 4) if repeat_rate_threshold is not None else None,
+            "timing_mad_threshold_minutes": round(timing_mad_threshold, 1) if timing_mad_threshold is not None else None,
+            "basis": "median_of_repeating_ready_hours",
+        },
+        "calibration": calibration,
+        "classifications": classifications,
+        "protected_windows": {"17:00-18:00": {"policy": "no_exact_quarter_structural", "forced_classification_when_repeating": "shifting_structural_grill"}},
+        "events": events,
+    }

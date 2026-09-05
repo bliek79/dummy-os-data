@@ -1,32 +1,41 @@
 # GitHub Release
 
-**Tag:** `0.1.0-alpha.12.11`
+**Tag:** `0.1.0-alpha.12.12`  
+**Release title:** Dummy OS Forecast 0.1.0-alpha.12.12 - Energy Peak Learning Observer
 
-**Release title:** `Dummy OS Forecast 0.1.0-alpha.12.11 - Energy Hourly Quality Diagnostic`
+## Dummy OS Forecast 0.1.0-alpha.12.12
 
-## Dummy OS Forecast 0.1.0-alpha.12.11
+Observer-only implementatie van Energy Forecast Stap 6D. De nieuwe laag detecteert en classificeert piekgedrag uit de bestaande forward-looking Energy-evaluatiehistorie zonder de forecast zelf te wijzigen.
 
-Gerichte observer-only uitbreiding om de zwakke middagforecast per afzonderlijk lokaal uur te analyseren.
+### Nieuw
+- Canonieke Home Assistant-entiteit `sensor.do_energy_peak_learning`.
+- `unique_id`: `dummy_os_data_energy_peak_learning`.
+- `suggested_object_id`: `do_energy_peak_learning`.
+- Kandidaatpiekdetectie op positieve residual `actual_kwh - forecast_kwh`.
+- Leave-one-local-day-out kalibratie met minimum 32 geldige kwartieren en 8 verschillende lokale dagen per uur.
+- Exact aangrenzende kandidaatkwartieren worden tot een event samengevoegd; gaten worden niet overbrugd en een event mag een uurgrens passeren.
+- Observer-only classificaties `incidental`, `structural`, `shifting_structural_grill` en `unresolved`; recurrence- en timinggrenzen worden uit de beschikbare historie gekalibreerd en niet als vaste woning-specifieke waarden ingevoerd.
+- Het venster 17:00-18:00 heeft vaste bescherming `no_exact_quarter_structural`.
 
-### Toegevoegd / verbeterd
-- Nieuwe canonieke sensor `sensor.do_energy_forecast_quality_by_hour`.
-- Exacte `unique_id` en `suggested_object_id`: `do_energy_forecast_quality_by_hour`.
-- Zes lokale middaguren van 12:00-13:00 tot en met 17:00-18:00.
-- Per uur: sample count, MAE, bias, evaluation coverage, accuracy en geldige actual-kwartieren.
-- Indeling op lokale kwartierstart en strikt per actief profiel.
-- Minimum 32 geldige forward-looking evaluatiepunten per uur voor `sufficient_basis`; totaalstatus pas voldoende als alle zes uren voldoende basis hebben.
-- Onbekende, ontbrekende of ongeldige waarden worden nooit als nul gereconstrueerd.
-- Deterministische migratie van de bekende automatisch gegenereerde alias-ID naar de canonieke entity-ID.
+### Identity / migratie / cleanup
+- Nieuwe entiteit; er bestaat geen oudere canonical identity die gemigreerd moet worden.
+- Er is geen gegenereerde alias bedoeld. Na installatie moet de entity registry exact `sensor.do_energy_peak_learning` bevatten; een afwijkende suffix/alias geldt als migratie- of cleanupafwijking.
+- Detailattributen `calibration`, `classifications` en `events` zijn uitgesloten van Recorder.
 
 ### Ongewijzigd
-- Observer-only: geen wijziging aan forecastwaarden, modeltraining, fallback, recency weighting, confidence of EMS-sturing.
-- Native architectuur blijft 15 minuten / 72 uur / 288 slots.
-- Bestaande dagdeel-, dagtype- en gecombineerde kwaliteitsdiagnostiek blijven ongewijzigd.
+- Native architectuur blijft exact 15 minuten / 72 uur / 288 slots.
+- `forecast.py` en forecastwaarden worden niet gewijzigd.
+- Geen planner-, execution-, confidence-, recency-, fallback- of Stap-7 time-windowinvloed.
+- Normal en Away blijven strikt gescheiden.
+- Missing, unavailable en niet-berekende kalibratiewaarden blijven `null` en worden nooit stilzwijgend `0`.
 
-### Live validatie na installatie
-1. Controleer dat `sensor.do_energy_forecast_quality_by_hour` exact verschijnt.
-2. Controleer `observer_only: true`, profiel en resolutie 15 minuten.
-3. Controleer exact zes middaguren van 12:00 tot 18:00.
-4. Vergelijk MAE, bias en accuracy per uur en bepaal het sterkst afwijkende uur.
-5. Controleer coverage, sample count en valid actual quarters per uur.
-6. Bevestig dat bestaande Energy Forecast-sensoren en 288-slot forecast ongewijzigd blijven functioneren.
+### Validatie
+- Contracttests voor minimum databasis, profielscheiding, null-semantiek en ontbrekende coverage.
+- Deterministische calibration fingerprint en historie-afgeleide classificatiegrenzen.
+- Expliciete leave-one-day-out-test.
+- Eventtests voor adjacency, geen gap-bridging en uurgrensoverschrijding.
+- Beschermingstest voor 17:00-18:00.
+- Identity-contracttest voor unique_id/suggested_object_id/registratie.
+- Regressietest voor 15 minuten / 72 uur / 288 slots.
+- Volledige bestaande testsuite, Python compile en manifest JSON-validatie vóór merge.
+- Na installatie live valideren dat `sensor.do_energy_peak_learning` exact onder de canonical entity_id verschijnt en observer-only blijft.
