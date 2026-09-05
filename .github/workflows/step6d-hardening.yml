@@ -1,0 +1,39 @@
+name: Step 6D contract hardening
+
+on:
+  push:
+    branches: [step6d-peak-learning-observer]
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.event.head_commit.message == 'bootstrap step6d contract hardening'
+    runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: step6d-peak-learning-observer
+          fetch-depth: 0
+      - name: Install test runner
+        run: python -m pip install --disable-pip-version-check pytest
+      - name: Apply contract hardening
+        run: python tools/step6d_hardening.py
+      - name: Compile without bytecode output
+        run: python -m py_compile custom_components/dummy_os_data/evaluation.py custom_components/dummy_os_data/sensor.py
+      - name: Validate manifest
+        run: python -m json.tool custom_components/dummy_os_data/manifest.json >/dev/null
+      - name: Test
+        run: pytest -q
+      - name: Commit clean hardening
+        run: |
+          find . -type d -name __pycache__ -prune -exec rm -rf {} +
+          rm -f tools/step6d_hardening.py .github/workflows/step6d-hardening.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Harden Step 6D calibration contract"
+          git push origin HEAD:step6d-peak-learning-observer
