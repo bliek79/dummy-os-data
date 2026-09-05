@@ -223,3 +223,60 @@ def calculate_day_type_daypart_quality(evaluations: list[dict[str, Any]], record
         all_sufficient = all_sufficient and status == "sufficient_basis"
         result[key] = {"status": status, "sample_count": samples, "mae_kwh": metrics["mae_kwh"], "bias_kwh": metrics["bias_kwh"], "evaluation_coverage_percent": coverage, "accuracy_percent": metrics["accuracy_percent"], "valid_actual_quarters": denominator}
     return {"profile": profile, "status": "sufficient_basis" if all_sufficient else "collecting", "minimum_samples_for_sufficient_basis": DAY_TYPE_DAYPART_MINIMUM_SAMPLES, "observer_only": True, "combinations": result}
+
+
+AFTERNOON_HOUR_MINIMUM_SAMPLES = 32
+AFTERNOON_HOURS: tuple[int, ...] = tuple(range(12, 18))
+
+def calculate_hour_quality(evaluations: list[dict[str, Any]], records: list[dict[str, Any]], profile: str, localize) -> dict[str, Any]:
+    """Calculate observer-only Energy quality per local afternoon hour."""
+    valid_actual_counts = {hour: 0 for hour in AFTERNOON_HOURS}
+    selected = {hour: [] for hour in AFTERNOON_HOURS}
+    for record in records:
+        if record.get("profile") != profile or record.get("valid") is not True:
+            continue
+        start = _parse_aware_start(record.get("start"))
+        if start is None:
+            continue
+        hour = localize(start).hour
+        if hour in valid_actual_counts:
+            valid_actual_counts[hour] += 1
+    for item in evaluations:
+        if item.get("profile") != profile:
+            continue
+        start = _parse_aware_start(item.get("start"))
+        if start is None:
+            continue
+        try:
+            float(item["actual_kwh"]); float(item["forecast_kwh"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        hour = localize(start).hour
+        if hour in selected:
+            selected[hour].append(item)
+    result = {}; all_sufficient = True
+    for hour in AFTERNOON_HOURS:
+        metrics = calculate_metrics(selected[hour], profile=None)
+        samples = int(metrics["samples"]); denominator = valid_actual_counts[hour]
+        coverage = round(min(100.0, samples / denominator * 100.0), 1) if denominator > 0 else None
+        status = "sufficient_basis" if samples >= AFTERNOON_HOUR_MINIMUM_SAMPLES else "collecting"
+        all_sufficient = all_sufficient and status == "sufficient_basis"
+        result[f"hour_{hour:02d}"] = {
+            "start_local": f"{hour:02d}:00",
+            "end_local": f"{hour + 1:02d}:00",
+            "status": status,
+            "sample_count": samples,
+            "mae_kwh": metrics["mae_kwh"],
+            "bias_kwh": metrics["bias_kwh"],
+            "evaluation_coverage_percent": coverage,
+            "accuracy_percent": metrics["accuracy_percent"],
+            "valid_actual_quarters": denominator,
+        }
+    return {
+        "profile": profile,
+        "status": "sufficient_basis" if all_sufficient else "collecting",
+        "minimum_samples_for_sufficient_basis": AFTERNOON_HOUR_MINIMUM_SAMPLES,
+        "observer_only": True,
+        "scope": "afternoon_12_18",
+        "hours": result,
+    }
