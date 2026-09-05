@@ -1,0 +1,93 @@
+name: Prepare Dummy OS Forecast alpha.12.10
+
+on:
+  push:
+    branches:
+      - release-alpha12-10
+    paths:
+      - .github/workflows/prepare-alpha12-10.yml
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release-alpha12-10
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --upgrade pytest
+      - name: Update version metadata
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          const = Path('custom_components/dummy_os_data/const.py')
+          const.write_text(const.read_text().replace('VERSION = "0.1.0-alpha.12.9"', 'VERSION = "0.1.0-alpha.12.10"'))
+          manifest = Path('custom_components/dummy_os_data/manifest.json')
+          data = json.loads(manifest.read_text())
+          data['version'] = '0.1.0-alpha.12.10'
+          manifest.write_text(json.dumps(data, indent=2) + '\n')
+          tests = Path('tests/test_release_consistency.py')
+          tests.write_text(tests.read_text().replace('VERSION = "0.1.0-alpha.12.9"', 'VERSION = "0.1.0-alpha.12.10"'))
+          PY
+      - name: Write release notes
+        run: |
+          cat > RELEASE_NOTES.md <<'EOF'
+          # GitHub Release
+
+          **Tag:** `0.1.0-alpha.12.10`
+
+          **Release title:** `Dummy OS Forecast 0.1.0-alpha.12.10 - Energy Combined Quality Matrix`
+
+          ## Dummy OS Forecast 0.1.0-alpha.12.10
+
+          Gerichte uitbreiding voor Energy Forecast Stap 5: observer-only gecombineerde kwaliteitsanalyse van het eigen forecastmodel op dagtype en dagdeel.
+
+          ### Toegevoegd / verbeterd
+          - Nieuwe canonieke sensor `sensor.do_energy_forecast_quality_by_day_type_and_daypart`.
+          - Acht vaste segmenten: `weekday_night`, `weekday_morning`, `weekday_afternoon`, `weekday_evening`, `weekend_night`, `weekend_morning`, `weekend_afternoon`, `weekend_evening`.
+          - Segmentatie gebeurt op lokale kwartierstart en combineert exact de reeds bestaande Stap 3 dagdelen met de Stap 4 weekday/weekend-indeling.
+          - Per segment: sample count, MAE, bias, evaluation coverage, accuracy en geldige actual-kwartieren.
+          - Strikte scheiding per actief profiel blijft behouden.
+          - Elk segment vereist minimaal 32 geldige forward-looking evaluatiepunten voor status `sufficient_basis`; totaalstatus is pas `sufficient_basis` wanneer alle acht segmenten voldoende basis hebben.
+          - Evaluation coverage gebruikt geldige actual-kwartieren binnen hetzelfde profiel en dezelfde combinatie als noemer.
+          - Onbekende, ontbrekende of ongeldige waarden worden niet als nul gereconstrueerd.
+          - Deterministische entity-identiteit en migratie van de bekende automatisch gegenereerde alias-ID zijn opgenomen.
+
+          ### Ongewijzigd
+          - Observer-only: forecastwaarden, fallback-hiërarchie, recency weighting en confidence-logica worden niet aangepast.
+          - Native architectuur blijft 15 minuten / 72 uur / 288 slots.
+          - De bestaande persistente Energy-evaluatiehistorie blijft leidend; er wordt geen parallelle historie opgebouwd.
+          - Stap 3 dagdeelkwaliteit en Stap 4 weekday/weekendkwaliteit blijven ongewijzigd functioneren.
+          - Solar, Weather, Prices, Degree Days en fysieke EMS-sturing zijn functioneel ongewijzigd.
+
+          ### Live validatie na installatie
+          1. Controleer dat `sensor.do_energy_forecast_quality_by_day_type_and_daypart` exact onder deze entity-ID verschijnt.
+          2. Controleer dat profiel, `observer_only: true`, resolutie 15 minuten en minimum 32 samples worden gemeld.
+          3. Controleer dat exact alle acht combinaties aanwezig zijn.
+          4. Controleer per segment sample count, MAE, bias, evaluation coverage, accuracy en valid actual quarters.
+          5. Controleer dat de totaalstatus alleen `sufficient_basis` is wanneer alle acht segmenten minimaal 32 samples hebben.
+          6. Bevestig dat de bestaande dagdeel-, dagtype- en 288-slot Energy Forecast-sensoren ongewijzigd blijven functioneren.
+          EOF
+      - run: python -m compileall -q custom_components/dummy_os_data
+      - name: Run Step 5 and regressions
+        run: python -m pytest -q tests/test_energy_day_type_daypart_quality.py tests/test_energy_day_type_daypart_sensor_contract.py tests/test_energy_day_type_quality.py tests/test_energy_day_type_sensor_contract.py tests/test_energy_daypart_quality.py tests/test_energy_daypart_sensor_contract.py tests/test_energy_store_schema.py tests/test_energy_forward_evaluation_contract.py tests/test_release_consistency.py
+      - name: Verify release metadata
+        run: |
+          grep -F 'VERSION = "0.1.0-alpha.12.10"' custom_components/dummy_os_data/const.py
+          grep -F '"version": "0.1.0-alpha.12.10"' custom_components/dummy_os_data/manifest.json
+          grep -F '**Tag:** `0.1.0-alpha.12.10`' RELEASE_NOTES.md
+      - run: rm .github/workflows/prepare-alpha12-10.yml
+      - run: find custom_components tests -type d -name __pycache__ -prune -exec rm -rf {} +
+      - name: Commit release metadata
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Prepare 0.1.0-alpha.12.10 release'
+          git push origin HEAD:release-alpha12-10
