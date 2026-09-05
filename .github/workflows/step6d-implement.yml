@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   implement:
-    if: github.event.head_commit.message == 'bootstrap step6d implementation v3'
+    if: github.event.head_commit.message == 'bootstrap step6d implementation v4'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,9 +28,9 @@ jobs:
         run: python -m json.tool custom_components/dummy_os_data/manifest.json >/dev/null
       - name: Test
         run: pytest -q
-      - name: Commit
+      - name: Commit clean implementation
         run: |
-          rm -f tools/step6d_apply.py tools/step6d_testfix.py .github/workflows/step6d-implement.yml
+          rm -f tools/step6d_apply.py tools/step6d_testfix.py .github/workflows/step6d-implement.yml __noop__
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
