@@ -19,6 +19,9 @@ jobs:
         with:
           ref: energy-step2-persistent-store-schema
 
+      - name: Install test dependency
+        run: python -m pip install --upgrade pytest
+
       - name: Patch coordinator persistence contract
         run: |
           python - <<'PY'
