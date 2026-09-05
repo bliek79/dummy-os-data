@@ -1,0 +1,48 @@
+name: Release Dummy OS Forecast alpha.12.12
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/release-alpha12-12.yml
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --upgrade pytest
+      - name: Compile release sources
+        run: python -m compileall -q custom_components/dummy_os_data
+      - name: Run full release tests
+        run: python -m pytest -q
+      - name: Verify release metadata
+        run: |
+          grep -F 'VERSION = "0.1.0-alpha.12.12"' custom_components/dummy_os_data/const.py
+          grep -F '"version": "0.1.0-alpha.12.12"' custom_components/dummy_os_data/manifest.json
+          grep -F '**Tag:** `0.1.0-alpha.12.12`' RELEASE_NOTES.md
+      - name: Build Home Assistant install ZIP
+        run: |
+          find custom_components -type d -name __pycache__ -prune -exec rm -rf {} +
+          zip -r Dummy_OS_Forecast_0.1.0-alpha.12.12_HA_install.zip custom_components/dummy_os_data -x '*/__pycache__/*' '*.pyc'
+          sha256sum Dummy_OS_Forecast_0.1.0-alpha.12.12_HA_install.zip > SHA256SUMS-alpha12.12.txt
+      - name: Publish pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create 0.1.0-alpha.12.12 \
+            Dummy_OS_Forecast_0.1.0-alpha.12.12_HA_install.zip \
+            SHA256SUMS-alpha12.12.txt \
+            --target "$GITHUB_SHA" \
+            --title 'Dummy OS Forecast 0.1.0-alpha.12.12 - Energy Peak Learning Observer' \
+            --notes-file RELEASE_NOTES.md \
+            --prerelease
