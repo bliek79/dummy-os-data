@@ -115,7 +115,7 @@ def test_native_forecast_contract_unchanged():
 
 def test_sensor_identity_contract():
     text = Path('custom_components/dummy_os_data/sensor.py').read_text()
-    assert '_attr_unique_id = "dummy_os_data_energy_peak_learning"' in text
+    assert '_attr_unique_id = "do_energy_peak_learning"' in text
     assert '_attr_suggested_object_id = "do_energy_peak_learning"' in text
     assert 'DummyOSEnergyPeakLearningSensor(coordinator)' in text
     assert '_unrecorded_attributes = frozenset({"calibration", "classifications", "events"})' in text

@@ -615,7 +615,7 @@ class DummyOSEnergyPeakLearningSensor(DummyOSBaseSensor):
     """Observer-only Step 6 Energy peak learning diagnostics."""
 
     _attr_name = "DO Energy Peak Learning"
-    _attr_unique_id = "dummy_os_data_energy_peak_learning"
+    _attr_unique_id = "do_energy_peak_learning"
     _attr_suggested_object_id = "do_energy_peak_learning"
     _attr_icon = "mdi:chart-bell-curve-cumulative"
     _unrecorded_attributes = frozenset({"calibration", "classifications", "events"})

@@ -18,7 +18,7 @@ SOLAR_GENERATED_ENTITY_ID_ALIASES = MIGRATION_MODULE.SOLAR_GENERATED_ENTITY_ID_A
 DEGREE_DAYS_GENERATED_ENTITY_ID_ALIASES = MIGRATION_MODULE.DEGREE_DAYS_GENERATED_ENTITY_ID_ALIASES
 OBSOLETE_HOME_INPUT_ENTITY_ALIASES = MIGRATION_MODULE.OBSOLETE_HOME_INPUT_ENTITY_ALIASES
 
-VERSION = "0.1.0-alpha.12.12"
+VERSION = "0.1.0-alpha.12.13"
 
 EXPECTED_SOLAR_ENTITY_ID_ALIASES = {
     "do_solar_status": "sensor.dummy_os_solar_source_status",
@@ -71,7 +71,7 @@ EXPECTED_ENERGY_IDS = (
     "do_energy_forecast_quality_by_day_type",
     "do_energy_forecast_quality_by_day_type_and_daypart",
     "do_energy_forecast_quality_by_hour",
-    "dummy_os_data_energy_peak_learning",
+    "do_energy_peak_learning",
 )
 
 EXPECTED_DEGREE_DAYS_IDS = (
@@ -209,6 +209,7 @@ class ReleaseConsistencyTests(unittest.TestCase):
             "do_home_forecast_mae": "do_energy_forecast_mae",
             "do_home_forecast_bias": "do_energy_forecast_bias",
             "do_home_forecast_evaluation_samples": "do_energy_forecast_evaluation_samples",
+            "dummy_os_data_energy_peak_learning": "do_energy_peak_learning",
         }
         for old, new in {**source_pairs, **energy_pairs}.items():
             self.assertRegex(init_source, rf'\("sensor", "{old}", "{new}", "sensor\.{new}"\)')

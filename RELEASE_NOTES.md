@@ -1,41 +1,31 @@
 # GitHub Release
 
-**Tag:** `0.1.0-alpha.12.12`  
-**Release title:** Dummy OS Forecast 0.1.0-alpha.12.12 - Energy Peak Learning Observer
+**Tag:** `0.1.0-alpha.12.13`  
+**Release title:** Dummy OS Forecast 0.1.0-alpha.12.13 - Peak Learning Identity Fix
 
-## Dummy OS Forecast 0.1.0-alpha.12.12
+## Dummy OS Forecast 0.1.0-alpha.12.13
 
-Observer-only implementatie van Energy Forecast Stap 6D. De nieuwe laag detecteert en classificeert piekgedrag uit de bestaande forward-looking Energy-evaluatiehistorie zonder de forecast zelf te wijzigen.
+Gerichte identity-correctie op de in alpha.12.12 geïntroduceerde observer-only Energy Peak Learning-sensor. Er is geen wijziging aan forecast-, kalibratie-, classificatie- of plannerlogica.
 
-### Nieuw
-- Canonieke Home Assistant-entiteit `sensor.do_energy_peak_learning`.
-- `unique_id`: `dummy_os_data_energy_peak_learning`.
-- `suggested_object_id`: `do_energy_peak_learning`.
-- Kandidaatpiekdetectie op positieve residual `actual_kwh - forecast_kwh`.
-- Leave-one-local-day-out kalibratie met minimum 32 geldige kwartieren en 8 verschillende lokale dagen per uur.
-- Exact aangrenzende kandidaatkwartieren worden tot een event samengevoegd; gaten worden niet overbrugd en een event mag een uurgrens passeren.
-- Observer-only classificaties `incidental`, `structural`, `shifting_structural_grill` en `unresolved`; recurrence- en timinggrenzen worden uit de beschikbare historie gekalibreerd en niet als vaste woning-specifieke waarden ingevoerd.
-- Het venster 17:00-18:00 heeft vaste bescherming `no_exact_quarter_structural`.
+### Correctie
+- Canonieke Home Assistant-entiteit blijft `sensor.do_energy_peak_learning`.
+- `unique_id` is gecorrigeerd van `dummy_os_data_energy_peak_learning` naar `do_energy_peak_learning` zodat Peak Learning exact dezelfde Energy-namespace volgt als alle overige Energy-sensoren.
+- `suggested_object_id` blijft `do_energy_peak_learning`.
+- Friendly name blijft `DO Energy Peak Learning`, conform de bestaande `DO Energy ...`-naamgeving.
 
-### Identity / migratie / cleanup
-- Nieuwe entiteit; er bestaat geen oudere canonical identity die gemigreerd moet worden.
-- Er is geen gegenereerde alias bedoeld. Na installatie moet de entity registry exact `sensor.do_energy_peak_learning` bevatten; een afwijkende suffix/alias geldt als migratie- of cleanupafwijking.
-- Detailattributen `calibration`, `classifications` en `events` zijn uitgesloten van Recorder.
+### Migratie / cleanup
+- Een bestaande alpha.12.12 registry-entry met unique-id `dummy_os_data_energy_peak_learning` wordt in-place gemigreerd naar `do_energy_peak_learning` en naar exact `sensor.do_energy_peak_learning`.
+- Daardoor hoort geen `_2`-entiteit en geen dubbele Peak Learning-entiteit te ontstaan.
+- De canonical entity-id wordt ook opgenomen in de stabiele entity-id migratielijst.
 
 ### Ongewijzigd
 - Native architectuur blijft exact 15 minuten / 72 uur / 288 slots.
-- `forecast.py` en forecastwaarden worden niet gewijzigd.
-- Geen planner-, execution-, confidence-, recency-, fallback- of Stap-7 time-windowinvloed.
-- Normal en Away blijven strikt gescheiden.
-- Missing, unavailable en niet-berekende kalibratiewaarden blijven `null` en worden nooit stilzwijgend `0`.
+- Peak Learning blijft strikt observer-only.
+- `forecast_influence_enabled=false` en `ready_for_model_influence=false` blijven ongewijzigd.
+- Geen wijziging aan thresholds, event-samenvoeging, classificatie, protected window 17:00-18:00, confidence, recency, fallback of plannerfeed.
 
 ### Validatie
-- Contracttests voor minimum databasis, profielscheiding, null-semantiek en ontbrekende coverage.
-- Deterministische calibration fingerprint en historie-afgeleide classificatiegrenzen.
-- Expliciete leave-one-day-out-test.
-- Eventtests voor adjacency, geen gap-bridging en uurgrensoverschrijding.
-- Beschermingstest voor 17:00-18:00.
-- Identity-contracttest voor unique_id/suggested_object_id/registratie.
-- Regressietest voor 15 minuten / 72 uur / 288 slots.
-- Volledige bestaande testsuite, Python compile en manifest JSON-validatie vóór merge.
-- Na installatie live valideren dat `sensor.do_energy_peak_learning` exact onder de canonical entity_id verschijnt en observer-only blijft.
+- Identity-contracttest controleert nu `do_energy_peak_learning` als unique-id.
+- Release-consistencytest controleert Peak Learning binnen de uniforme `do_energy_*` Energy-namespace.
+- Migratiecontracttest controleert de overgang van de foutieve alpha.12.12 unique-id naar de canonical identity.
+- Volledige testsuite, Python compile en manifest JSON-validatie worden vóór publicatie uitgevoerd.
