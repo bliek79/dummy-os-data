@@ -141,13 +141,12 @@ class DummyOSHomeDataCoordinator:
 
     @callback
     def _async_source_changed(self, event: Event[EventStateChangedData]) -> None:
-        """Integrate power until source state change and refresh availability state."""
+        """Integrate live power without refreshing forecast/analysis entities."""
         now = dt_util.utcnow()
         self._integrate_until(now)
         new_state = event.data.get("new_state")
         self._last_power_w = self._power_from_state(new_state)
         self._last_sample_time = now
-        self._notify()
 
     @staticmethod
     def _quarter_boundary_utc(now: datetime) -> datetime:
