@@ -18,7 +18,7 @@ SOLAR_GENERATED_ENTITY_ID_ALIASES = MIGRATION_MODULE.SOLAR_GENERATED_ENTITY_ID_A
 DEGREE_DAYS_GENERATED_ENTITY_ID_ALIASES = MIGRATION_MODULE.DEGREE_DAYS_GENERATED_ENTITY_ID_ALIASES
 OBSOLETE_HOME_INPUT_ENTITY_ALIASES = MIGRATION_MODULE.OBSOLETE_HOME_INPUT_ENTITY_ALIASES
 
-VERSION = "0.1.0-alpha.12.15"
+VERSION = "0.1.0-alpha.12.16"
 
 EXPECTED_SOLAR_ENTITY_ID_ALIASES = {
     "do_solar_status": "sensor.dummy_os_solar_source_status",
@@ -174,6 +174,20 @@ class ReleaseConsistencyTests(unittest.TestCase):
             '("sensor", "do_energy_time_windows", "sensor.do_energy_time_windows")',
             init_source,
         )
+
+    def test_observer_runtime_names_are_explicit_and_canonical(self) -> None:
+        sensor_source = (ROOT / "custom_components/dummy_os_data/sensor.py").read_text()
+        for class_name, expected_name in (
+            ("DummyOSEnergyPeakLearningSensor", "DO Energy Peak Learning"),
+            ("DummyOSEnergyTimeWindowsSensor", "DO Energy Time Windows"),
+        ):
+            start = sensor_source.index(f"class {class_name}(DummyOSBaseSensor):")
+            next_class = sensor_source.find("\n\nclass ", start + 1)
+            block = sensor_source[start:] if next_class == -1 else sensor_source[start:next_class]
+            self.assertIn(f'_attr_name = "{expected_name}"', block)
+            self.assertIn('def name(self) -> str:', block)
+            self.assertIn(f'return "{expected_name}"', block)
+            self.assertNotIn('return "Dummy"', block)
 
     def test_degree_days_are_registered_sensor_entities(self) -> None:
         degree_source = (ROOT / "custom_components/dummy_os_data/degree_days.py").read_text()
