@@ -1,32 +1,24 @@
 # GitHub Release
 
-**Tag:** `0.1.0-alpha.12.15`  
-**Release title:** Dummy OS Forecast 0.1.0-alpha.12.15 - Time Windows Canonical Identity Gate
+**Tag:** `0.1.0-alpha.12.16`  
+**Release title:** Dummy OS Forecast 0.1.0-alpha.12.16 - Observer Runtime Name Fix
 
-## Dummy OS Forecast 0.1.0-alpha.12.15
+## Dummy OS Forecast 0.1.0-alpha.12.16
 
-Gerichte hotfix voor de Home Assistant entity-ID van Energy Time Windows plus een structurele identity release-gate. Geen forecast- of modelgedrag verandert.
+Gerichte naamfix op basis van live Home Assistant-validatie. De canonical entity-ID-fix uit alpha.12.15 blijft ongewijzigd.
 
 ### Fix
-- Registreert `do_energy_time_windows` expliciet op canonical `sensor.do_energy_time_windows`.
-- Herkent de door alpha.12.14 automatisch aangemaakte `sensor.dummy_os_forecast_do_energy_time_windows` uitsluitend als veilige generated alias.
-- Migreert die bestaande registry-entry in-place naar `sensor.do_energy_time_windows`; er wordt geen tweede sensor of `_2`-variant aangemaakt.
-- `unique_id`, `suggested_object_id` en friendly name blijven respectievelijk `do_energy_time_windows`, `do_energy_time_windows` en `DO Energy Time Windows`.
+- `sensor.do_energy_time_windows` publiceert runtime/friendly name expliciet als `DO Energy Time Windows`.
+- `sensor.do_energy_peak_learning` publiceert runtime/friendly name expliciet als `DO Energy Peak Learning`.
+- De zichtbare naam, `unique_id`, `suggested_object_id` en canonical entity-ID blijven ongewijzigd.
 
-### Structurele identity release-gate
-- Iedere publieke `do_energy_*`-sensor moet in tests een expliciet registry-pad naar `sensor.<unique_id>` hebben.
-- Alleen correcte `_attr_unique_id`/`_attr_suggested_object_id` is niet langer voldoende om de identity-gate te passeren.
-- De bekende foutieve alpha.12.14 Time Windows-ID heeft een expliciete veilige migratietest.
-- Gebruikershernoemde onbekende entity IDs blijven beschermd en worden niet geforceerd gemigreerd.
+### Structurele identity-gate
+- Runtime `name`/`friendly_name` is voortaan onderdeel van dezelfde release-gate als entity_id, unique_id, suggested_object_id en registry-migratie.
+- De observer-sensoren mogen niet meer terugvallen op `Dummy` of een integratie/device-prefix.
+- Geen `_2`-varianten of alias-sensoren.
 
 ### Ongewijzigd
-- Observer-only Time Windows-algoritme.
-- Peak Learning.
+- Time Windows observer-algoritme.
+- Peak Learning observer-algoritme.
 - Forecastwaarden, confidence, recency, fallback en plannerfeed.
 - Native architectuur: exact 15 minuten / 72 uur / 288 slots.
-
-### Releasevalidatie
-- Python compile.
-- Volledige testsuite.
-- Manifest JSON-validatie.
-- Canonical identity gate voor alle publieke Energy-sensoren.

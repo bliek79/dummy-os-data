@@ -620,6 +620,11 @@ class DummyOSEnergyTimeWindowsSensor(DummyOSBaseSensor):
     _attr_unique_id = "do_energy_time_windows"
     _attr_suggested_object_id = "do_energy_time_windows"
     _attr_icon = "mdi:timeline-clock-outline"
+    @property
+    def name(self) -> str:
+        """Return the canonical runtime name used for friendly_name."""
+        return "DO Energy Time Windows"
+
 
     def _result(self) -> dict[str, Any]:
         peak_result = calculate_peak_learning(self.coordinator.evaluations, self.coordinator.profile, dt_util.as_local)
@@ -684,6 +689,11 @@ class DummyOSEnergyPeakLearningSensor(DummyOSBaseSensor):
     _attr_suggested_object_id = "do_energy_peak_learning"
     _attr_icon = "mdi:chart-bell-curve-cumulative"
     _unrecorded_attributes = frozenset({"calibration", "classifications", "events"})
+    @property
+    def name(self) -> str:
+        """Return the canonical runtime name used for friendly_name."""
+        return "DO Energy Peak Learning"
+
 
     def _result(self) -> dict[str, Any]:
         return calculate_peak_learning(self.coordinator.evaluations, self.coordinator.profile, dt_util.as_local)
