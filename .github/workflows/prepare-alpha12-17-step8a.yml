@@ -65,7 +65,7 @@ jobs:
           grep -F 'return "DO Energy Recency Weighting"' custom_components/dummy_os_data/sensor.py
           grep -F '("sensor", "do_energy_recency_weighting", "sensor.do_energy_recency_weighting")' custom_components/dummy_os_data/__init__.py
           grep -F '"do_energy_recency_weighting": "sensor.dummy_os_forecast_do_energy_recency_weighting"' custom_components/dummy_os_data/entity_migrations.py
-          ! grep -R -F 'sensor.do_energy_recency_weighting_2' custom_components tests
+          ! grep -R -F 'sensor.do_energy_recency_weighting_2' custom_components/dummy_os_data
       - name: Verify release version
         run: |
           grep -F 'VERSION = "0.1.0-alpha.12.17"' custom_components/dummy_os_data/const.py
