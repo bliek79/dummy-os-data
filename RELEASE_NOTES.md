@@ -1,34 +1,37 @@
 # GitHub Release
 
-**Tag:** `0.1.0-alpha.12.17`  
-**Release title:** Dummy OS Forecast 0.1.0-alpha.12.17 - Energy Recency Weighting Observer
+**Tag:** `0.1.0-alpha.12.18`  
+**Release title:** Dummy OS Forecast 0.1.0-alpha.12.18 - Stable Foundation Reset
 
-## Dummy OS Forecast 0.1.0-alpha.12.17
+## Dummy OS Forecast 0.1.0-alpha.12.18
 
-Stap 8A voegt de observer-only Energy Recency Weighting-laag toe. De bestaande productieforecast blijft exact de huidige 28-daagse recency-half-life gebruiken.
+Deze pre-release is een stabiliteitsrelease. Er wordt geen nieuwe forecastfunctionaliteit toegevoegd. Het doel is de bestaande Dummy OS Forecast-runtime terug te brengen naar een beheersbaar fundament voordat verdere modelontwikkeling wordt hervat.
 
-### Nieuw
-- `sensor.do_energy_recency_weighting` met schema `8a.1` en algoritme `recency_weighting_observer_v1`.
-- Forward-only replay van 14, 21, 28 en 42 dagen op exact dezelfde fallback- en samplebasis.
-- Control-reproductiegate tegen de opgeslagen 28-daagse productieforecast.
-- MAE, RMSE, bias, WMAPE, median, p90, paired win-rate, ESS, segment- en early/late-diagnostiek.
-- Conservatieve promotiediagnostiek; `promotion_ready` kan observer-only waar worden, maar forecastinvloed blijft uit.
+### Opgelost
+- Snelle state-wijzigingen van `sensor.do_source_home_power` blijven het lopende kwartier exact integreren, maar starten niet langer een volledige `_notify()`-fan-out naar alle Energy Forecast- en analyse-entiteiten.
+- Zware Energy Forecast-/observerberekeningen worden daardoor niet meer bij iedere live vermogenswijziging opnieuw door Home Assistant aangeroepen.
+- Kwartiergrenzen en expliciete profielwijzigingen blijven geldige refreshmomenten voor de Energy Forecast-laag.
 
-### Identity-gate
-- Canonical `entity_id`: `sensor.do_energy_recency_weighting`.
-- `unique_id` en `suggested_object_id`: `do_energy_recency_weighting`.
-- Runtime/friendly name: `DO Energy Recency Weighting`.
-- De mogelijke automatisch gegenereerde `sensor.dummy_os_forecast_do_energy_recency_weighting` is expliciet als veilige migratiealias vastgelegd.
-- Geen `_2`-variant of alias-sensor.
+### Stabiliteitsgate
+- Nieuwe regressietest borgt dat live Home Power-updates wel integreren maar niet de forecastlaag notificeren.
+- Kwartiergrens blijft de normale Energy-refreshtrigger.
+- Profielwijziging blijft een expliciete refreshtrigger.
+- Compile, manifestcontrole en volledige regressietestset zijn verplicht vóór publicatie.
 
 ### Ongewijzigd
-- Productie-half-life blijft exact 28 dagen.
-- `forecast.py` productiepad en confidenceformule blijven ongewijzigd.
-- Peak Learning, Time Windows, fallback-hiërarchie, Model Health en plannerfeed blijven ongewijzigd.
 - Native architectuur blijft exact 15 minuten / 72 uur / 288 slots.
+- Bestaande Energy Forecast-historie, snapshots en evaluaties worden niet verwijderd.
+- Het productie-forecastmodel en de huidige 28-daagse recency-weging blijven functioneel ongewijzigd.
+- Solar, Weather, Prices en Degree Days worden in deze gerichte stabiliteitsrelease niet functioneel herschreven.
+- Dummy OS EMS en fysieke batterijbesturing worden niet gewijzigd.
 
-### Validatie
-- Volledige unit-/regressietestset.
-- Compile en manifestcontrole.
-- Identity/friendly-name release-gate.
-- Na installatie: live Home Assistant-validatie van status, control reproduction en observer-only flags.
+### Bekend / nog geblokkeerd
+- De integratiebrede Home Assistant `friendly_name`-/device-name-identiteitskwestie is nog niet als live opgelost bewezen en blijft afzonderlijk onderdeel van de stabilisatie.
+- Peak Learning, Time Windows, Recency Weighting en uitgebreide kwaliteitsdiagnostiek blijven onderwerp van de Minimal Core-ontleding; deze release verwijdert geen historische data.
+
+### Live validatie na installatie
+- Bevestigen dat Dummy OS Forecast zonder fout start na upgrade vanaf alpha.12.17.
+- Minimaal één volledig kwartier laten voltooien en controleren dat `sensor.do_energy_actual_quarter` normaal blijft vullen.
+- Controleren dat de 72-uurs Energy Forecast 288 kwartierslots blijft leveren.
+- Home Assistant-responsiviteit vergelijken met alpha.12.17, met bijzondere aandacht voor snelle Home Power-wijzigingen.
+- Controleren dat bestaande historie en profielinstelling behouden zijn.
