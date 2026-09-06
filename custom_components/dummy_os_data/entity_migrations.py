@@ -45,6 +45,7 @@ ENERGY_GENERATED_ENTITY_ID_ALIASES: dict[str, str] = {
     "do_energy_forecast_quality_by_day_type_and_daypart": "sensor.dummy_os_forecast_do_energy_forecast_quality_by_day_type_and_daypart",
     "do_energy_forecast_quality_by_hour": "sensor.dummy_os_forecast_do_energy_forecast_quality_by_hour",
     "do_energy_time_windows": "sensor.dummy_os_forecast_do_energy_time_windows",
+    "do_energy_recency_weighting": "sensor.dummy_os_forecast_do_energy_recency_weighting",
 }
 
 OBSOLETE_HOME_INPUT_ENTITY_ALIASES: dict[str, set[str]] = {

@@ -18,6 +18,7 @@ from .coordinator import DummyOSHomeDataCoordinator
 from .degree_days_sensor import build_degree_days_sensors
 from .evaluation import calculate_day_type_daypart_quality, calculate_day_type_quality, calculate_daypart_quality, calculate_hour_quality, calculate_peak_learning
 from .time_windows import calculate_time_windows
+from .recency_weighting import calculate_recency_weighting
 from .forecast import HomeBaselineForecast
 from .home_input_sensor import build_home_input_sensors
 from .solar_sensor import build_solar_sensors
@@ -62,6 +63,7 @@ async def async_setup_entry(
             DummyOSHomeForecastQualityByHourSensor(coordinator),
             DummyOSEnergyPeakLearningSensor(coordinator),
             DummyOSEnergyTimeWindowsSensor(coordinator),
+            DummyOSEnergyRecencyWeightingSensor(coordinator),
             DummyOSWeatherCurrentSensor(coordinator, "temperature_2m", "Temperature", "°C", "mdi:thermometer", SensorDeviceClass.TEMPERATURE),
             DummyOSWeatherCurrentSensor(coordinator, "apparent_temperature", "Apparent Temperature", "°C", "mdi:thermometer-lines", SensorDeviceClass.TEMPERATURE),
             DummyOSWeatherCurrentSensor(coordinator, "relative_humidity_2m", "Relative Humidity", "%", "mdi:water-percent", SensorDeviceClass.HUMIDITY),
@@ -679,6 +681,37 @@ class DummyOSEnergyTimeWindowsSensor(DummyOSBaseSensor):
             "calibration_fingerprint": result["calibration_fingerprint"],
             "blockers": result["blockers"],
         }
+
+
+class DummyOSEnergyRecencyWeightingSensor(DummyOSBaseSensor):
+    """Observer-only Step 8A Energy recency-weighting diagnostics."""
+
+    _attr_name = "DO Energy Recency Weighting"
+    _attr_unique_id = "do_energy_recency_weighting"
+    _attr_suggested_object_id = "do_energy_recency_weighting"
+    _attr_icon = "mdi:timeline-clock-outline"
+    _unrecorded_attributes = frozenset({"per_candidate_metrics", "segment_metrics", "early_late_metrics"})
+
+    @property
+    def name(self) -> str:
+        """Return the canonical runtime name used for friendly_name."""
+        return "DO Energy Recency Weighting"
+
+    def _result(self) -> dict[str, Any]:
+        return calculate_recency_weighting(
+            self.coordinator.records,
+            self.coordinator.evaluations,
+            self.coordinator.profile,
+            dt_util.as_local,
+        )
+
+    @property
+    def native_value(self) -> str:
+        return str(self._result()["status"])
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return dict(self._result())
 
 
 class DummyOSEnergyPeakLearningSensor(DummyOSBaseSensor):
