@@ -18,7 +18,7 @@ SOLAR_GENERATED_ENTITY_ID_ALIASES = MIGRATION_MODULE.SOLAR_GENERATED_ENTITY_ID_A
 DEGREE_DAYS_GENERATED_ENTITY_ID_ALIASES = MIGRATION_MODULE.DEGREE_DAYS_GENERATED_ENTITY_ID_ALIASES
 OBSOLETE_HOME_INPUT_ENTITY_ALIASES = MIGRATION_MODULE.OBSOLETE_HOME_INPUT_ENTITY_ALIASES
 
-VERSION = "0.1.0-alpha.12.14"
+VERSION = "0.1.0-alpha.12.15"
 
 EXPECTED_SOLAR_ENTITY_ID_ALIASES = {
     "do_solar_status": "sensor.dummy_os_solar_source_status",
@@ -143,6 +143,37 @@ class ReleaseConsistencyTests(unittest.TestCase):
         self.assertIn('("select", "do_home_profile", "do_energy_profile", "select.do_energy_profile")', init_source)
         self.assertNotIn('_attr_unique_id = "do_home_', sensor_source)
         self.assertNotIn('_attr_unique_id = "do_home_profile"', select_source)
+        # Mandatory identity release gate: every public Energy sensor must have
+        # an explicit path to its canonical sensor.<unique_id> registry ID.
+        for unique_id in EXPECTED_ENERGY_IDS:
+            direct = f'(\"sensor\", \"{unique_id}\", \"sensor.{unique_id}\")'
+            migrated = re.compile(
+                rf'\(\"sensor\", \"[^\"]+\", \"{re.escape(unique_id)}\", \"sensor\.{re.escape(unique_id)}\"\)'
+            )
+            self.assertTrue(
+                direct in init_source or migrated.search(init_source),
+                f'Missing canonical entity-ID route for {unique_id}',
+            )
+        self.assertNotIn('sensor.dummy_os_forecast_do_energy_time_windows', init_source)
+
+    def test_time_windows_bad_alpha1214_id_is_safe_for_in_place_migration(self) -> None:
+        migrations_source = (ROOT / "custom_components/dummy_os_data/entity_migrations.py").read_text()
+        init_source = (ROOT / "custom_components/dummy_os_data/__init__.py").read_text()
+        self.assertIn(
+            '"do_energy_time_windows": "sensor.dummy_os_forecast_do_energy_time_windows"',
+            migrations_source,
+        )
+        self.assertTrue(
+            MIGRATION_MODULE.is_known_generated_entity_id(
+                "sensor",
+                "do_energy_time_windows",
+                "sensor.dummy_os_forecast_do_energy_time_windows",
+            )
+        )
+        self.assertIn(
+            '("sensor", "do_energy_time_windows", "sensor.do_energy_time_windows")',
+            init_source,
+        )
 
     def test_degree_days_are_registered_sensor_entities(self) -> None:
         degree_source = (ROOT / "custom_components/dummy_os_data/degree_days.py").read_text()
