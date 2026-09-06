@@ -42,6 +42,7 @@ def build_solar_sensors(coordinator) -> list[SensorEntity]:
 
 class DummyOSSolarBaseSensor(SensorEntity):
     _attr_should_poll = False
+    _attr_has_entity_name = False
 
     def __init__(self, coordinator) -> None:
         self.solar = coordinator.solar

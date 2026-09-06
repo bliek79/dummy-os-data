@@ -88,6 +88,7 @@ class DummyOSBaseSensor(SensorEntity):
     """Base Energy Forecast sensor."""
 
     _attr_should_poll = False
+    _attr_has_entity_name = False
 
     def __init__(self, coordinator: DummyOSHomeDataCoordinator) -> None:
         self.coordinator = coordinator

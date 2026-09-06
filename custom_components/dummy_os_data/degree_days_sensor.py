@@ -16,6 +16,7 @@ class DummyOSDegreeDaysBaseSensor(SensorEntity):
     """Base entity for the Degree Days feature layer."""
 
     _attr_should_poll = False
+    _attr_has_entity_name = False
 
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
