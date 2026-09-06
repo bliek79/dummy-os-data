@@ -48,6 +48,7 @@ _IDENTITY_MIGRATIONS: tuple[tuple[str, str, str, str], ...] = (
     ("sensor", "do_home_forecast_mae", "do_energy_forecast_mae", "sensor.do_energy_forecast_mae"),
     ("sensor", "do_home_forecast_bias", "do_energy_forecast_bias", "sensor.do_energy_forecast_bias"),
     ("sensor", "do_home_forecast_evaluation_samples", "do_energy_forecast_evaluation_samples", "sensor.do_energy_forecast_evaluation_samples"),
+    ("sensor", "dummy_os_data_energy_peak_learning", "do_energy_peak_learning", "sensor.do_energy_peak_learning"),
     ("select", "do_home_profile", "do_energy_profile", "select.do_energy_profile"),
 )
 
@@ -119,6 +120,7 @@ _ENTITY_ID_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("sensor", "do_energy_forecast_quality_by_day_type", "sensor.do_energy_forecast_quality_by_day_type"),
     ("sensor", "do_energy_forecast_quality_by_day_type_and_daypart", "sensor.do_energy_forecast_quality_by_day_type_and_daypart"),
     ("sensor", "do_energy_forecast_quality_by_hour", "sensor.do_energy_forecast_quality_by_hour"),
+    ("sensor", "do_energy_peak_learning", "sensor.do_energy_peak_learning"),
     ("sensor", "do_degree_days_status", "sensor.do_degree_days_status"),
     ("sensor", "do_degree_days_history_days", "sensor.do_degree_days_history_days"),
     ("sensor", "do_degree_days_temperature_daily", "sensor.do_degree_days_temperature_daily"),
