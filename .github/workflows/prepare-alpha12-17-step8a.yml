@@ -1,0 +1,63 @@
+name: Prepare Dummy OS Forecast alpha.12.17 Step 8A
+
+on:
+  push:
+    branches:
+      - energy-step8a-recency-weighting-observer
+    paths:
+      - .github/workflows/prepare-alpha12-17-step8a.yml
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: energy-step8a-recency-weighting-observer
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply Step 8A observer patch
+        run: python scripts/apply_step8a_recency_weighting.py
+      - run: python -m pip install --upgrade pytest
+      - name: Compile sources
+        run: python -m compileall -q custom_components/dummy_os_data tests
+      - name: Run full tests
+        run: python -m pytest -q
+      - name: Validate manifest JSON
+        run: python -m json.tool custom_components/dummy_os_data/manifest.json >/dev/null
+      - name: Verify Step 8A observer boundary
+        run: |
+          grep -F 'RECENCY_HALF_LIFE_DAYS = 28.0' custom_components/dummy_os_data/forecast.py
+          grep -F 'SCHEMA_VERSION = "8a.1"' custom_components/dummy_os_data/recency_weighting.py
+          grep -F 'ALGORITHM_VERSION = "recency_weighting_observer_v1"' custom_components/dummy_os_data/recency_weighting.py
+          grep -F '"forecast_influence_enabled": False' custom_components/dummy_os_data/recency_weighting.py
+          grep -F 'CANDIDATE_HALF_LIVES_DAYS: tuple[float, ...] = (14.0, 21.0, 28.0, 42.0)' custom_components/dummy_os_data/recency_weighting.py
+          grep -F 'FORECAST_HORIZON_HOURS = 72' custom_components/dummy_os_data/const.py
+          grep -F 'QUARTER_MINUTES = 15' custom_components/dummy_os_data/const.py
+      - name: Verify full Recency identity gate
+        run: |
+          grep -F '_attr_unique_id = "do_energy_recency_weighting"' custom_components/dummy_os_data/sensor.py
+          grep -F '_attr_suggested_object_id = "do_energy_recency_weighting"' custom_components/dummy_os_data/sensor.py
+          grep -F 'return "DO Energy Recency Weighting"' custom_components/dummy_os_data/sensor.py
+          grep -F '("sensor", "do_energy_recency_weighting", "sensor.do_energy_recency_weighting")' custom_components/dummy_os_data/__init__.py
+          grep -F '"do_energy_recency_weighting": "sensor.dummy_os_forecast_do_energy_recency_weighting"' custom_components/dummy_os_data/entity_migrations.py
+          ! grep -R -F 'sensor.do_energy_recency_weighting_2' custom_components tests
+      - name: Verify release version
+        run: |
+          grep -F 'VERSION = "0.1.0-alpha.12.17"' custom_components/dummy_os_data/const.py
+          grep -F '"version": "0.1.0-alpha.12.17"' custom_components/dummy_os_data/manifest.json
+      - name: Commit prepared Step 8A implementation
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/dummy_os_data/recency_weighting.py custom_components/dummy_os_data/sensor.py custom_components/dummy_os_data/__init__.py custom_components/dummy_os_data/entity_migrations.py custom_components/dummy_os_data/const.py custom_components/dummy_os_data/manifest.json tests/test_recency_weighting.py tests/test_recency_weighting_sensor_contract.py tests/test_release_consistency.py RELEASE_NOTES.md
+          git diff --cached --quiet && exit 0
+          git commit -m 'Implement Step 8A recency weighting observer'
+          git push origin HEAD:energy-step8a-recency-weighting-observer
