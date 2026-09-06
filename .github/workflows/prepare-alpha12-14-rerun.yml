@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Correct instability fixture generator
-        run: python scripts/fix_alpha12_14_unstable_test.py
+        run: python scripts/fix_alpha12_14_fixture.py
       - name: Apply Step 7D release patch
         run: python scripts/prepare_alpha12_14.py
       - run: python -m pip install --upgrade pytest
