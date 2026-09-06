@@ -30,6 +30,7 @@ class DummyOSEnergyProfileSelect(SelectEntity):
     _attr_options = PROFILE_OPTIONS
     _attr_icon = "mdi:home-account"
     _attr_should_poll = False
+    _attr_has_entity_name = False
 
     def __init__(self, coordinator: DummyOSHomeDataCoordinator) -> None:
         self.coordinator = coordinator
