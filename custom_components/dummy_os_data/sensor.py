@@ -17,6 +17,7 @@ from .const import DOMAIN, FORECAST_SLOTS, NAME, QUARTER_MINUTES, VERSION
 from .coordinator import DummyOSHomeDataCoordinator
 from .degree_days_sensor import build_degree_days_sensors
 from .evaluation import calculate_day_type_daypart_quality, calculate_day_type_quality, calculate_daypart_quality, calculate_hour_quality, calculate_peak_learning
+from .time_windows import calculate_time_windows
 from .forecast import HomeBaselineForecast
 from .home_input_sensor import build_home_input_sensors
 from .solar_sensor import build_solar_sensors
@@ -60,6 +61,7 @@ async def async_setup_entry(
             DummyOSHomeForecastQualityByDayTypeAndDaypartSensor(coordinator),
             DummyOSHomeForecastQualityByHourSensor(coordinator),
             DummyOSEnergyPeakLearningSensor(coordinator),
+            DummyOSEnergyTimeWindowsSensor(coordinator),
             DummyOSWeatherCurrentSensor(coordinator, "temperature_2m", "Temperature", "°C", "mdi:thermometer", SensorDeviceClass.TEMPERATURE),
             DummyOSWeatherCurrentSensor(coordinator, "apparent_temperature", "Apparent Temperature", "°C", "mdi:thermometer-lines", SensorDeviceClass.TEMPERATURE),
             DummyOSWeatherCurrentSensor(coordinator, "relative_humidity_2m", "Relative Humidity", "%", "mdi:water-percent", SensorDeviceClass.HUMIDITY),
@@ -609,6 +611,69 @@ class DummyOSWeatherModelSensor(DummyOSWeatherBaseSensor):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {"provider": "Open-Meteo", "resolution_minutes": 15, "horizon_hours": 72, "forecast_slots": FORECAST_SLOTS, "current_variables": list(self.weather.current.keys()), "timeline_fields": list(POINT_FIELDS), "daily_days": len(self.weather.daily), "generation_time_ms": self.weather.generation_time_ms}
+
+
+class DummyOSEnergyTimeWindowsSensor(DummyOSBaseSensor):
+    """Observer-only Step 7 Energy Time Windows diagnostics."""
+
+    _attr_name = "DO Energy Time Windows"
+    _attr_unique_id = "do_energy_time_windows"
+    _attr_suggested_object_id = "do_energy_time_windows"
+    _attr_icon = "mdi:timeline-clock-outline"
+
+    def _result(self) -> dict[str, Any]:
+        peak_result = calculate_peak_learning(self.coordinator.evaluations, self.coordinator.profile, dt_util.as_local)
+        return calculate_time_windows(peak_result, self.coordinator.profile, dt_util.as_local)
+
+    @property
+    def native_value(self) -> str:
+        return str(self._result()["status"])
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        result = self._result()
+        return {
+            "schema_version": result["schema_version"],
+            "algorithm_version": result["algorithm_version"],
+            "profile": result["profile"],
+            "context_key": result["context_key"],
+            "classification_source": result["classification_source"],
+            "observer_only": result["observer_only"],
+            "forecast_influence_enabled": result["forecast_influence_enabled"],
+            "ready_for_live_observation": result["ready_for_live_observation"],
+            "ready_for_forecast_influence": result["ready_for_forecast_influence"],
+            "event_count": result["event_count"],
+            "event_days": result["event_days"],
+            "rejected_event_count": result["rejected_event_count"],
+            "reject_reasons": result["reject_reasons"],
+            "window_start": result["window_start"],
+            "window_end": result["window_end"],
+            "window_width_minutes": result["window_width_minutes"],
+            "window_quarter_count": result["window_quarter_count"],
+            "p10_start_minute": result["p10_start_minute"],
+            "p90_end_minute": result["p90_end_minute"],
+            "median_center_minute": result["median_center_minute"],
+            "center_mad_minutes": result["center_mad_minutes"],
+            "contained_day_count": result["contained_day_count"],
+            "contained_day_ratio": result["contained_day_ratio"],
+            "median_event_duration_minutes": result["median_event_duration_minutes"],
+            "median_daily_energy_kwh": result["median_daily_energy_kwh"],
+            "energy_iqr_kwh": result["energy_iqr_kwh"],
+            "lodo_max_start_shift_minutes": result["lodo_max_start_shift_minutes"],
+            "lodo_max_end_shift_minutes": result["lodo_max_end_shift_minutes"],
+            "early_late_start_shift_minutes": result["early_late_start_shift_minutes"],
+            "early_late_end_shift_minutes": result["early_late_end_shift_minutes"],
+            "protected_window_overlap": result["protected_window_overlap"],
+            "native_resolution_minutes": result["native_resolution_minutes"],
+            "calibration_method": result["calibration_method"],
+            "minimum_event_days_collecting_exit": result["minimum_event_days_collecting_exit"],
+            "minimum_event_days_calibrated": result["minimum_event_days_calibrated"],
+            "minimum_event_days_stable": result["minimum_event_days_stable"],
+            "maximum_boundary_shift_minutes": result["maximum_boundary_shift_minutes"],
+            "source_basis": result["source_basis"],
+            "calibration_fingerprint": result["calibration_fingerprint"],
+            "blockers": result["blockers"],
+        }
 
 
 class DummyOSEnergyPeakLearningSensor(DummyOSBaseSensor):

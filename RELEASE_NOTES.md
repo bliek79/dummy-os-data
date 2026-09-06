@@ -1,31 +1,42 @@
 # GitHub Release
 
-**Tag:** `0.1.0-alpha.12.13`  
-**Release title:** Dummy OS Forecast 0.1.0-alpha.12.13 - Peak Learning Identity Fix
+**Tag:** `0.1.0-alpha.12.14`  
+**Release title:** Dummy OS Forecast 0.1.0-alpha.12.14 - Energy Time Windows Observer
 
-## Dummy OS Forecast 0.1.0-alpha.12.13
+## Dummy OS Forecast 0.1.0-alpha.12.14
 
-Gerichte identity-correctie op de in alpha.12.12 geïntroduceerde observer-only Energy Peak Learning-sensor. Er is geen wijziging aan forecast-, kalibratie-, classificatie- of plannerlogica.
+Observer-only implementatie van Energy Forecast Stap 7D. Time Windows vertaalt uitsluitend door Peak Learning als `shifting_structural_grill` geclassificeerde events naar een diagnostisch lokaal tijdvenster. Er is geen forecast- of plannerinvloed.
 
-### Correctie
-- Canonieke Home Assistant-entiteit blijft `sensor.do_energy_peak_learning`.
-- `unique_id` is gecorrigeerd van `dummy_os_data_energy_peak_learning` naar `do_energy_peak_learning` zodat Peak Learning exact dezelfde Energy-namespace volgt als alle overige Energy-sensoren.
-- `suggested_object_id` blijft `do_energy_peak_learning`.
-- Friendly name blijft `DO Energy Peak Learning`, conform de bestaande `DO Energy ...`-naamgeving.
+### Nieuw
+- Canonieke Home Assistant-entiteit `sensor.do_energy_time_windows`.
+- `unique_id`: `do_energy_time_windows`.
+- `suggested_object_id`: `do_energy_time_windows`.
+- Friendly name: `DO Energy Time Windows`.
+- Dagrepresentatieven zodat iedere lokale eventdag maximaal eenmaal meetelt.
+- Deterministische p10-start / p90-eind-kalibratie met native 15-minuten-uitlijning.
+- Leave-one-day-out stabiliteit vanaf 12 eventdagen.
+- Early/late stabiliteitscontrole vanaf 16 eventdagen.
+- Statussen `blocked`, `collecting`, `calibrating`, `calibrated_observer_only`, `stable_observer_only` en `unstable_no_window`.
+- Strikte null-semantiek en compacte publieke attributen conform schema `7b.1`.
 
-### Migratie / cleanup
-- Een bestaande alpha.12.12 registry-entry met unique-id `dummy_os_data_energy_peak_learning` wordt in-place gemigreerd naar `do_energy_peak_learning` en naar exact `sensor.do_energy_peak_learning`.
-- Daardoor hoort geen `_2`-entiteit en geen dubbele Peak Learning-entiteit te ontstaan.
-- De canonical entity-id wordt ook opgenomen in de stabiele entity-id migratielijst.
+### Identity / compatibiliteit
+- Eerste officiële Time Windows-identity; er wordt bewust geen fictieve legacy-migratie toegevoegd.
+- Canonieke tuple: `sensor.do_energy_time_windows` / `do_energy_time_windows` / `do_energy_time_windows`.
+- Geen alias-sensor, geen `do_home_*`, geen `dummy_os_data_*` identity en geen geaccepteerde `_2`-fallback.
+
+### Bescherming
+- Alleen `shifting_structural_grill` is window-eligible.
+- 17:00-18:00 blijft protected; er wordt geen `preferred_quarter`, `fixed_peak_quarter` of andere exact-quarter waarheid gepubliceerd.
+- `observer_only=true`, `forecast_influence_enabled=false` en `ready_for_forecast_influence=false` blijven altijd actief in Stap 7D.
 
 ### Ongewijzigd
 - Native architectuur blijft exact 15 minuten / 72 uur / 288 slots.
-- Peak Learning blijft strikt observer-only.
-- `forecast_influence_enabled=false` en `ready_for_model_influence=false` blijven ongewijzigd.
-- Geen wijziging aan thresholds, event-samenvoeging, classificatie, protected window 17:00-18:00, confidence, recency, fallback of plannerfeed.
+- Geen wijziging aan Energy Forecast-waarden, confidence, recency, fallback, plannerfeed of uitvoering.
+- Normal en Away blijven strikt gescheiden.
+- Missing, unavailable en niet-berekende waarden worden nooit stilzwijgend nul.
 
 ### Validatie
-- Identity-contracttest controleert nu `do_energy_peak_learning` als unique-id.
-- Release-consistencytest controleert Peak Learning binnen de uniforme `do_energy_*` Energy-namespace.
-- Migratiecontracttest controleert de overgang van de foutieve alpha.12.12 unique-id naar de canonical identity.
-- Volledige testsuite, Python compile en manifest JSON-validatie worden vóór publicatie uitgevoerd.
+- Contracttests voor collecting/null, quarter-alignment, stabiele en instabiele vensters, profielscheiding, classification eligibility en deterministic fingerprint.
+- Identity- en publieke-attributengrenstest voor `sensor.do_energy_time_windows`.
+- Regressietest voor 15 minuten / 72 uur / 288 slots.
+- Volledige testsuite, Python compile en manifest JSON-validatie vóór release.
