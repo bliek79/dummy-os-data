@@ -9,7 +9,7 @@ def test_do_plan_input_sensor_is_registered_and_observer_only():
     builder = (ROOT / "custom_components/dummy_os_data/do_plan_input.py").read_text()
     assert 'DummyOSPlanInput72hSensor(coordinator)' in sensor
     assert '_attr_unique_id = "do_plan_input_72h"' in sensor
-    assert '_unrecorded_attributes = frozenset({"rows"})' in sensor
+    assert '_unrecorded_attributes = frozenset({"rows", "slots", "source_time_audit"})' in sensor
     assert '("sensor", "do_plan_input_72h", "sensor.do_plan_input_72h")' in init
     assert '"physical_execution_authority": False' in builder
     assert '"shadow_only": True' in builder

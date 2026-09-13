@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import math
 from typing import Sequence
 
@@ -56,9 +56,13 @@ def floor_slot_start(timestamp: datetime, resolution_minutes: int = 15) -> datet
 
 
 def next_complete_slot(timestamp: datetime, resolution_minutes: int = 15) -> datetime:
-    """Return the current boundary only when exactly on it, otherwise the next."""
-    floor = floor_slot_start(timestamp, resolution_minutes)
-    return floor if timestamp == floor else floor + timedelta(minutes=resolution_minutes)
+    """Elapsed-time UTC arithmetic, preserving local offset only for presentation."""
+    if timestamp.tzinfo is None:
+        raise ValueError("timezone-aware timestamp required")
+    reference = timestamp.astimezone(timezone.utc)
+    floor = floor_slot_start(reference, resolution_minutes)
+    result = floor if reference == floor else floor + timedelta(minutes=resolution_minutes)
+    return result.astimezone(timestamp.tzinfo)
 
 
 def next_future_slot(timestamp: datetime, resolution_minutes: int = 15) -> datetime:

@@ -34,6 +34,8 @@ from .const import (
     QUARTER_MINUTES,
 )
 
+from .planner_time_contract import build_time_contract, select_points, utc
+
 _LOGGER = logging.getLogger(__name__)
 
 PRICES_URL = "https://stroomvoorspeller.nl/data/prices.json"
@@ -394,7 +396,7 @@ class DummyOSPricesCoordinator:
         # Keep a precomputed compatibility view. The property below recalculates
         # the exact 72h planner window on access so a 15-minute clock advance
         # between price refreshes cannot shift the consumer horizon by list slicing.
-        planner_start = self._next_complete_local_hour(current_quarter)
+        planner_start = utc(build_time_contract(dt_util.utcnow())["window_start"])
         self._planner_points, self.planner_price_missing_starts = _select_exact_price_window(
             self._price_buffer_by_start,
             start=planner_start,
@@ -441,22 +443,21 @@ class DummyOSPricesCoordinator:
 
     @property
     def planner_points(self) -> list[PricePoint]:
-        """Return the exact current 72h/288-slot planner price window."""
-        if not self._price_buffer_by_start:
-            return []
-        planner_start = self._next_complete_local_hour(dt_util.utcnow())
-        selected, missing = _select_exact_price_window(
-            self._price_buffer_by_start,
-            start=planner_start,
-            slot_count=PLANNER_PRICE_SLOT_COUNT,
-        )
+        """Compatibility view; production supplies one captured time contract."""
+        return self.planner_points_for_window(build_time_contract(dt_util.utcnow()))
+
+    def planner_points_for_window(self, contract: dict[str, Any], *, include_neighbours: bool = False) -> list[PricePoint]:
+        """Select the caller's exact window without an independent clock read."""
+        start = utc(contract["window_start"])
+        selected, missing = _select_exact_price_window(self._price_buffer_by_start, start=start, slot_count=PLANNER_PRICE_SLOT_COUNT)
         self._planner_points = selected
         self.planner_price_missing_starts = missing
-        self.planner_window_start = _utc_start(planner_start)
-        self.planner_window_end = self.planner_window_start + timedelta(hours=PLANNER_HORIZON_HOURS)
+        self.planner_window_start = start
+        self.planner_window_end = utc(contract["window_end"])
         self.planner_price_valid_slots = len(selected)
         self.planner_price_missing_slots = len(missing)
-        return list(selected)
+        self._planner_time_contract = dict(contract)
+        return select_points(self._price_buffer_by_start.values(), contract, neighbours=include_neighbours)
 
     def _publish_states(self) -> None:
         point = self.current_point
@@ -572,6 +573,7 @@ class DummyOSPricesCoordinator:
             "price_buffer_end": self.price_buffer_end.isoformat() if self.price_buffer_end else None,
             "price_buffer_first_missing": self.price_buffer_missing_starts[0].isoformat() if self.price_buffer_missing_starts else None,
             "price_buffer_last_missing": self.price_buffer_missing_starts[-1].isoformat() if self.price_buffer_missing_starts else None,
+            "planner_time_contract": getattr(self, "_planner_time_contract", None),
             "planner_price_expected_slots": PLANNER_PRICE_SLOT_COUNT,
             "planner_price_valid_slots": self.planner_price_valid_slots,
             "planner_price_missing_slots": self.planner_price_missing_slots,

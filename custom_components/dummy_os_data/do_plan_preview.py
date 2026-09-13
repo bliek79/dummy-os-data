@@ -78,7 +78,7 @@ def _blocked(base: dict[str, Any], blockers: list[str]) -> dict[str, Any]:
     }
 
 
-def build_do_plan_preview(
+def _legacy_build_do_plan_preview(
     *,
     input_result: dict[str, Any],
     reserve_result: dict[str, Any],
@@ -351,3 +351,11 @@ def build_do_plan_preview(
         "current_hour": current_hour.isoformat(),
         "trade_rows_excluded_interpolated": len(future_rows) - len(trade_rows),
     }
+
+
+def build_do_plan_preview(**kwargs: Any) -> dict[str, Any]:
+    from custom_components.dummy_os_data.planner_time_contract import propagate_time, window_errors
+    sources = (kwargs["input_result"], kwargs["reserve_result"])
+    errors = window_errors(*sources)
+    result = {"status": "blocked", "valid": False, "blockers": errors} if errors else _legacy_build_do_plan_preview(**kwargs)
+    return propagate_time(result, *sources)

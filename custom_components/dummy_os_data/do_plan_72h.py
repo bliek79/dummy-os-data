@@ -52,7 +52,7 @@ def _preview_trade_fallback(slots: list[dict[str, Any]], preview_result: dict[st
     return None
 
 
-def build_do_plan_72h(*, input_result: dict[str, Any], reserve_result: dict[str, Any], preview_result: dict[str, Any], grid_support_result: dict[str, Any] | None = None) -> dict[str, Any]:
+def _legacy_build_do_plan_72h(*, input_result: dict[str, Any], reserve_result: dict[str, Any], preview_result: dict[str, Any], grid_support_result: dict[str, Any] | None = None) -> dict[str, Any]:
     """Build native 288-slot EMS parity simulation and hourly Apex aggregation."""
     effective_horizon = input_result.get("effective_horizon_hours")
     if not isinstance(effective_horizon, int):
@@ -230,3 +230,38 @@ def build_do_plan_72h(*, input_result: dict[str, Any], reserve_result: dict[str,
         "grid_support_fallback_to_preview": bool(grid_support_result is not None and grid_support_result.get("status") not in {"ready", "degraded", "infeasible"}),
         "missing_as_zero_used": False,
     }
+
+
+def build_do_plan_72h(**kwargs: Any) -> dict[str, Any]:
+    from custom_components.dummy_os_data.planner_time_contract import propagate_time, window_errors, finite
+    from custom_components.dummy_os_data.planner_time_views import aggregate_clock_hours
+    sources = (kwargs["input_result"], kwargs["reserve_result"], kwargs["preview_result"])
+    errors = window_errors(*sources)
+    contract = sources[0].get("time_contract")
+    bridge = sources[1].get("soc_bridge")
+    if contract is not None and (not isinstance(bridge, dict) or bridge.get("valid") is not True
+                                 or bridge.get("projected_at") != contract.get("window_start")
+                                 or finite(bridge.get("planner_start_soc_percent")) is None):
+        errors.append("planner_start_soc_not_aligned")
+    if errors:
+        return propagate_time({"status": "blocked", "valid": False, "reason": errors[0], "blockers": errors,
+                               "slots": [], "hours": [], "slot_count": 0, "hour_count": 0,
+                               "shadow_only": True, "physical_execution_authority": False,
+                               "active_use_permitted": False}, *sources)
+    if contract is not None:
+        kwargs = {**kwargs, "reserve_result": {**sources[1], "soc_percent": bridge["planner_start_soc_percent"]}}
+    result = propagate_time(_legacy_build_do_plan_72h(**kwargs), *sources)
+    if contract is not None:
+        result["soc_bridge"] = bridge
+        result["measured_soc_percent"] = sources[1].get("measured_soc_percent")
+        result["planner_start_soc_percent"] = bridge["planner_start_soc_percent"]
+        result["soc_time_basis"] = "planner_window_start_estimate"
+        result["transport_hour_count"] = len(result.get("hours") or [])
+        result["hours"] = aggregate_clock_hours(result.get("slots") or [])
+        result["hour_count"] = result["dashboard_hour_count"] = len(result["hours"])
+        result["simulated_hour_count"] = len(result.get("slots") or []) / 4
+        result["apex_contract"] = "utc_clock_hour_aggregation_with_explicit_partial_edges"
+        result["dashboard_start"] = contract["window_start"]
+        result["dashboard_end"] = contract["window_end"]
+        result["baseline_hours_grouping"] = "window_relative_transport_not_apex"
+    return result

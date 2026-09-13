@@ -174,7 +174,7 @@ def _validate_contract(contract: dict[str, Any]) -> list[str]:
         blockers.append("native_resolution_not_15")
     if contract.get("native_slot_count") != NATIVE_SLOT_COUNT:
         blockers.append("native_slot_count_not_288")
-    if contract.get("planner_resolution_minutes") != PLANNER_RESOLUTION_MINUTES:
+    if contract.get("planner_resolution_minutes") != (15 if contract.get("time_contract") is not None else PLANNER_RESOLUTION_MINUTES):
         blockers.append("planner_resolution_not_60")
     if contract.get("planner_hour_count") != PLANNER_HOUR_COUNT:
         blockers.append("planner_hour_count_not_72")
@@ -241,7 +241,7 @@ def _effective_horizon(rows: list[dict[str, Any]]) -> tuple[int, int | None, str
     return first_invalid, first_invalid, reason, trailing_only
 
 
-def build_do_plan_input_72h(
+def _legacy_build_do_plan_input_72h(
     *,
     contract: dict[str, Any],
     solar_points: Iterable[Any],
@@ -483,3 +483,18 @@ def build_do_plan_input_72h(
         "rows_signature": _signature(rows),
         "rows": rows,
     }
+
+
+def build_do_plan_input_72h(**kwargs: Any) -> dict[str, Any]:
+    from custom_components.dummy_os_data.planner_time_contract import validate_time_contract
+    from custom_components.dummy_os_data.planner_time_input import normalize_source, finalize_time_input
+    time_contract = kwargs.get("contract", {}).get("time_contract")
+    if time_contract is None:
+        return _legacy_build_do_plan_input_72h(**kwargs)
+    errors = validate_time_contract(time_contract)
+    if errors:
+        return {"status": "blocked", "valid": False, "blockers": errors, "rows": [], "slots": []}
+    solar, solar_audit = normalize_source(list(kwargs["solar_points"]), price=False)
+    prices, price_audit = normalize_source(list(kwargs["price_points"]), price=True)
+    result = _legacy_build_do_plan_input_72h(**{**kwargs, "solar_points": solar, "price_points": prices})
+    return finalize_time_input(result, time_contract, {"solar": solar_audit, "prices": price_audit})

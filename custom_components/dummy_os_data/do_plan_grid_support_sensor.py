@@ -3,9 +3,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 from typing import Any
+from .planner_time_runtime import aligned_reference, subscribe_upstream
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 from .const import DOMAIN
+from .planner_time_contract import build_time_contract
 from .do_plan_grid_support import build_do_plan_grid_support
 from .do_plan_store_bridge import build_do_plan_store_bridge
 from .do_plan_store_sensor import build_do_plan_store_sensors, get_do_plan_store_runtime
@@ -25,7 +27,7 @@ def build_plan_store_bridge_refresh_key(snapshot: dict[str, Any]) -> str:
     if isinstance(now, datetime):
         now_utc = now.astimezone(timezone.utc); quarter = now_utc.replace(minute=(now_utc.minute // 15) * 15, second=0, microsecond=0).isoformat()
     else: quarter = repr(now)
-    material={"quarter":quarter,"profile":snapshot.get("profile"),"source_available":snapshot.get("source_available"),"soc_percent":snapshot.get("soc_percent"),"solar_status":snapshot.get("solar_status"),"prices_status":snapshot.get("prices_status"),"prices_freshness":snapshot.get("prices_freshness"),"records":snapshot.get("records"),"evaluations":snapshot.get("evaluations"),"horizon_daily_stats":snapshot.get("horizon_daily_stats"),"solar_points":snapshot.get("solar_points"),"price_points":snapshot.get("price_points")}
+    material={"window_id": (snapshot.get("time_contract") or {}).get("window_id"),"soc_bridge":snapshot.get("soc_bridge"),"quarter":quarter,"profile":snapshot.get("profile"),"source_available":snapshot.get("source_available"),"soc_percent":snapshot.get("soc_percent"),"solar_status":snapshot.get("solar_status"),"prices_status":snapshot.get("prices_status"),"prices_freshness":snapshot.get("prices_freshness"),"records":snapshot.get("records"),"evaluations":snapshot.get("evaluations"),"horizon_daily_stats":snapshot.get("horizon_daily_stats"),"solar_points":snapshot.get("solar_points"),"price_points":snapshot.get("price_points")}
     return hashlib.sha256(_stable_material(material).encode("utf-8")).hexdigest()
 
 
@@ -47,6 +49,16 @@ def build_do_plan_grid_support_sensors(coordinator: Any) -> list[Any]:
     from .do_plan_operating_mode_sensor import build_do_plan_operating_mode_sensors
 
     class DummyOSPlanGridSupportSensor(DummyOSPlanReserveSOCSensor):
+        async def async_added_to_hass(self) -> None:
+            await super().async_added_to_hass()
+            self._remove_aligned_upstream = subscribe_upstream(self, ['do_plan_input_72h', 'do_plan_energy_need', 'do_plan_reserve_soc'])
+
+        async def async_will_remove_from_hass(self) -> None:
+            remove = getattr(self, "_remove_aligned_upstream", None)
+            if remove is not None:
+                remove()
+            await super().async_will_remove_from_hass()
+
         _attr_name = "DO Plan Grid Support"
         _attr_unique_id = "do_plan_grid_support"
         _attr_suggested_object_id = "do_plan_grid_support"
@@ -56,7 +68,7 @@ def build_do_plan_grid_support_sensors(coordinator: Any) -> list[Any]:
             input_entity,input_result=_state_contract(self.hass,"do_plan_input_72h")
             need_entity,need=_state_contract(self.hass,"do_plan_energy_need")
             reserve_entity,reserve=_state_contract(self.hass,"do_plan_reserve_soc")
-            return {"now":dt_util.utcnow(),"input_entity":input_entity,"energy_need_entity":need_entity,"reserve_entity":reserve_entity,"input_result":input_result,"energy_need_result":need,"reserve_result":reserve}
+            return {"now":aligned_reference(input_result, dt_util.utcnow()),"input_entity":input_entity,"energy_need_entity":need_entity,"reserve_entity":reserve_entity,"input_result":input_result,"energy_need_result":need,"reserve_result":reserve}
         def _calculate_result(self,snapshot:dict[str,Any])->dict[str,Any]:
             input_result=snapshot["input_result"]; need=snapshot["energy_need_result"]; reserve=snapshot["reserve_result"]
             result=build_do_plan_grid_support(input_result=input_result,energy_need_result=need,reserve_result=reserve,trigger_kwh=self.GRID_CHARGE_TRIGGER_KWH)
@@ -87,7 +99,15 @@ def build_do_plan_grid_support_sensors(coordinator: Any) -> list[Any]:
                     self._skipped_refreshes+=1
                     if not self._refresh_pending: return
                     continue
-                result=await self.hass.async_add_executor_job(self._calculate_result,snapshot); await runtime.async_ensure_loaded(); candidates=result.get("candidates") if result.get("status")=="ready" else []
+                result=await self.hass.async_add_executor_job(self._calculate_result,snapshot)
+                await runtime.async_ensure_loaded()
+                if result.get("window_id") and result["window_id"] != build_time_contract(dt_util.utcnow())["window_id"]:
+                    self._cached_result = {**result, "status": "stale", "valid": False,
+                                           "blockers": ["planner_window_elapsed"],
+                                           "reason": "planner_window_elapsed", "store_changed": False}
+                    self.async_write_ha_state()
+                    continue
+                candidates=result.get("candidates") if result.get("status")=="ready" else []
                 if not isinstance(candidates,list): candidates=[]
                 apply_result=await runtime.async_apply_bridge_candidates(candidates,snapshot["now"]); result["store_apply_status"]=apply_result.get("status"); result["store_changed"]=apply_result.get("changed"); result["store_persistence_saved"]=apply_result.get("persistence_saved"); result["store_sync"]=apply_result.get("sync"); result["refresh_key"]=material_key; result["skipped_refreshes"]=self._skipped_refreshes
                 if apply_result.get("status")!="ready": result["status"]="blocked"; result["valid"]=False; result["blockers"]=sorted(set([*(result.get("blockers") or []),*(apply_result.get("blockers") or [])]))

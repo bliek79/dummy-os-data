@@ -194,10 +194,10 @@ def _find_next_usable_solar(slots: list[dict[str, Any]], index: int) -> int | No
     required_slots = USABLE_SOLAR_WINDOW_SLOTS * USABLE_SOLAR_CONSECUTIVE_WINDOWS
     last_candidate = len(slots) - required_slots
     first_candidate = max(0, index)
-    remainder = first_candidate % SLOTS_PER_HOUR
-    if remainder:
-        first_candidate += SLOTS_PER_HOUR - remainder
-    for candidate in range(first_candidate, last_candidate + 1, SLOTS_PER_HOUR):
+    for candidate in range(first_candidate, last_candidate + 1):
+        candidate_start = _utc(slots[candidate]["start"])
+        if candidate_start is None or candidate_start.minute != 0:
+            continue
         if _is_usable_solar_window(slots, candidate) and _is_usable_solar_window(
             slots, candidate + USABLE_SOLAR_WINDOW_SLOTS
         ):

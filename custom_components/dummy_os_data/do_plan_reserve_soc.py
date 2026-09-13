@@ -20,7 +20,7 @@ def _finite(value: Any, *, non_negative: bool = False) -> float | None:
     return number
 
 
-def build_do_plan_reserve_soc(*, energy_need_result: dict[str, Any]) -> dict[str, Any]:
+def _legacy_build_do_plan_reserve_soc(*, energy_need_result: dict[str, Any]) -> dict[str, Any]:
     """Translate Step-2 energy need into a protected reserve-SOC position.
 
     Reserve demand above static battery capacity is not by itself infeasible:
@@ -129,3 +129,13 @@ def build_do_plan_reserve_soc(*, energy_need_result: dict[str, Any]) -> dict[str
         "static_capacity_shortfall_kwh": round(unmet_at_full, 3),
         "feasibility_deferred_to_charge_window_planner": grid_support_required,
     }
+
+
+def build_do_plan_reserve_soc(**kwargs: Any) -> dict[str, Any]:
+    from custom_components.dummy_os_data.planner_time_contract import propagate_time
+    need = kwargs["energy_need_result"]
+    result = propagate_time(_legacy_build_do_plan_reserve_soc(**kwargs), need)
+    for key in ("soc_bridge", "measured_soc_percent", "planner_start_soc_percent", "soc_time_basis"):
+        if key in need:
+            result[key] = need[key]
+    return result
