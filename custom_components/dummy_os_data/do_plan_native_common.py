@@ -20,7 +20,7 @@ MAX_CHARGE_POWER_W = 3200
 MAX_DISCHARGE_POWER_W = 3200
 DEFAULT_MINIMUM_TRADE_MARGIN = 0.10
 # Compatibility diagnostic: the old EMS requires two consecutive usable hours.
-# Alpha33 evaluates those two hours from native quarter data as two rolling
+# Alpha33 evaluates those two hours from native quarter data as two hour-aligned
 # four-quarter windows, instead of incorrectly requiring every quarter itself
 # to satisfy solar >= home.
 USABLE_SOLAR_CONSECUTIVE_SLOTS = 8
@@ -173,13 +173,7 @@ def _expand_native_slots(raw_rows: list[dict[str, Any]], effective_horizon_hours
 
 
 def _is_usable_solar_window(slots: list[dict[str, Any]], start_index: int) -> bool:
-    """Old-EMS usable-hour semantics, evaluated from four native quarters.
-
-    The old planner considered an hour usable when hourly solar was positive and
-    hourly solar >= hourly home consumption. Alpha32 accidentally tightened that
-    into four independent quarter checks. Alpha33 restores the original meaning
-    while keeping quarter data authoritative.
-    """
+    """Old-EMS usable-hour semantics, evaluated from four native quarters."""
     end_index = start_index + USABLE_SOLAR_WINDOW_SLOTS
     if start_index < 0 or end_index > len(slots):
         return False
@@ -190,10 +184,20 @@ def _is_usable_solar_window(slots: list[dict[str, Any]], start_index: int) -> bo
 
 
 def _find_next_usable_solar(slots: list[dict[str, Any]], index: int) -> int | None:
-    """Return first quarter starting two consecutive usable 60-minute windows."""
+    """Return first hour-aligned quarter starting two consecutive usable hours.
+
+    The calculation may be requested at any native quarter, but the old EMS
+    classified complete hourly forecast rows. Therefore candidate solar blocks
+    are aligned to the next full hour boundary, while the deficit before that
+    boundary remains calculated from the exact native quarter index.
+    """
     required_slots = USABLE_SOLAR_WINDOW_SLOTS * USABLE_SOLAR_CONSECUTIVE_WINDOWS
     last_candidate = len(slots) - required_slots
-    for candidate in range(max(0, index), last_candidate + 1):
+    first_candidate = max(0, index)
+    remainder = first_candidate % SLOTS_PER_HOUR
+    if remainder:
+        first_candidate += SLOTS_PER_HOUR - remainder
+    for candidate in range(first_candidate, last_candidate + 1, SLOTS_PER_HOUR):
         if _is_usable_solar_window(slots, candidate) and _is_usable_solar_window(
             slots, candidate + USABLE_SOLAR_WINDOW_SLOTS
         ):
@@ -217,9 +221,6 @@ def _dynamic_reserve_profile(slots: list[dict[str, Any]], discharge_eff: float) 
         else:
             usable_index = _find_next_usable_solar(slots, index)
             if usable_index is None:
-                # Exactly like old EMS: horizon end is not proof that no usable
-                # solar follows. Fall back to normal base reserve instead of
-                # reserving the complete remainder of the horizon.
                 floor = base_floor
                 need = 0.0
                 first_usable = None
@@ -245,14 +246,7 @@ def _dynamic_reserve_profile(slots: list[dict[str, Any]], discharge_eff: float) 
 
 
 def _dynamic_safety_schedule(slots: list[dict[str, Any]], reserve_profile: list[dict[str, Any]], start_soc: float, charge_eff: float) -> dict[str, float]:
-    """Old-EMS alpha27 safety precharge translated to native quarter deadlines.
-
-    Requirement N uses the reserve that applies after slot N and must therefore
-    be feasible by the end of that same quarter. For each demonstrable local
-    reserve peak, only the missing stored energy is allocated, using the cheapest
-    technically usable quarters before the deadline. Solar retains first priority
-    inside the shared 3.2 kW / 0.8 kWh-per-quarter charge ceiling.
-    """
+    """Old-EMS alpha27 safety precharge translated to native quarter deadlines."""
     planned: dict[str, float] = {}
     if not slots:
         return planned
@@ -274,10 +268,6 @@ def _dynamic_safety_schedule(slots: list[dict[str, Any]], reserve_profile: list[
 
     slot_input_limit = MAX_CHARGE_POWER_W / 1000.0 / SLOTS_PER_HOUR
     for deadline_idx, required_floor in peaks:
-        # Same conservative estimate as old EMS: initial storage + free solar +
-        # safety energy already allocated for earlier peaks. Discretionary home
-        # discharge is ignored because the sequential simulation protects the
-        # execution floor itself.
         estimated = CAPACITY_KWH * start_soc / 100.0
         for sim_idx in range(deadline_idx + 1):
             slot = slots[sim_idx]
