@@ -19,7 +19,13 @@ DISCHARGE_EFFICIENCY_PERCENT = 92.0
 MAX_CHARGE_POWER_W = 3200
 MAX_DISCHARGE_POWER_W = 3200
 DEFAULT_MINIMUM_TRADE_MARGIN = 0.10
+# Compatibility diagnostic: the old EMS requires two consecutive usable hours.
+# Alpha33 evaluates those two hours from native quarter data as two rolling
+# four-quarter windows, instead of incorrectly requiring every quarter itself
+# to satisfy solar >= home.
 USABLE_SOLAR_CONSECUTIVE_SLOTS = 8
+USABLE_SOLAR_WINDOW_SLOTS = 4
+USABLE_SOLAR_CONSECUTIVE_WINDOWS = 2
 EPS = 0.01
 
 
@@ -166,15 +172,37 @@ def _expand_native_slots(raw_rows: list[dict[str, Any]], effective_horizon_hours
     return slots, sorted(set(blockers)), source_mode
 
 
-def _is_usable_solar(slots: list[dict[str, Any]], index: int) -> bool:
-    if index < 0 or index >= len(slots):
+def _is_usable_solar_window(slots: list[dict[str, Any]], start_index: int) -> bool:
+    """Old-EMS usable-hour semantics, evaluated from four native quarters.
+
+    The old planner considered an hour usable when hourly solar was positive and
+    hourly solar >= hourly home consumption. Alpha32 accidentally tightened that
+    into four independent quarter checks. Alpha33 restores the original meaning
+    while keeping quarter data authoritative.
+    """
+    end_index = start_index + USABLE_SOLAR_WINDOW_SLOTS
+    if start_index < 0 or end_index > len(slots):
         return False
-    slot = slots[index]
-    return slot["solar_kwh"] > 0 and slot["solar_kwh"] >= slot["home_kwh"]
+    window = slots[start_index:end_index]
+    solar = sum(slot["solar_kwh"] for slot in window)
+    home = sum(slot["home_kwh"] for slot in window)
+    return solar > 0.0 and solar + 1e-12 >= home
+
+
+def _find_next_usable_solar(slots: list[dict[str, Any]], index: int) -> int | None:
+    """Return first quarter starting two consecutive usable 60-minute windows."""
+    required_slots = USABLE_SOLAR_WINDOW_SLOTS * USABLE_SOLAR_CONSECUTIVE_WINDOWS
+    last_candidate = len(slots) - required_slots
+    for candidate in range(max(0, index), last_candidate + 1):
+        if _is_usable_solar_window(slots, candidate) and _is_usable_solar_window(
+            slots, candidate + USABLE_SOLAR_WINDOW_SLOTS
+        ):
+            return candidate
+    return None
 
 
 def _dynamic_reserve_profile(slots: list[dict[str, Any]], discharge_eff: float) -> list[dict[str, Any]]:
-    """Build old-EMS-equivalent reserve semantics on native quarter slots."""
+    """Build old-EMS dynamic reserve semantics from native quarter data."""
     minimum_stored = CAPACITY_KWH * MIN_SOC_PERCENT / 100.0
     base_floor = CAPACITY_KWH * (MIN_SOC_PERCENT + SAFETY_RESERVE_PERCENT) / 100.0
     base_floor = min(CAPACITY_KWH, max(minimum_stored, base_floor))
@@ -187,18 +215,19 @@ def _dynamic_reserve_profile(slots: list[dict[str, Any]], discharge_eff: float) 
             need = 0.0
             first_usable = None
         else:
-            usable_index: int | None = None
-            last_candidate = len(slots) - USABLE_SOLAR_CONSECUTIVE_SLOTS
-            for candidate in range(index, last_candidate + 1):
-                if all(_is_usable_solar(slots, candidate + offset) for offset in range(USABLE_SOLAR_CONSECUTIVE_SLOTS)):
-                    usable_index = candidate
-                    break
+            usable_index = _find_next_usable_solar(slots, index)
             if usable_index is None:
+                # Exactly like old EMS: horizon end is not proof that no usable
+                # solar follows. Fall back to normal base reserve instead of
+                # reserving the complete remainder of the horizon.
                 floor = base_floor
                 need = 0.0
                 first_usable = None
             else:
-                need = sum(max(0.0, slots[j]["home_kwh"] - slots[j]["solar_kwh"]) for j in range(index, usable_index))
+                need = sum(
+                    max(0.0, slots[j]["home_kwh"] - slots[j]["solar_kwh"])
+                    for j in range(index, usable_index)
+                )
                 stored_need = need / discharge_eff
                 floor = min(CAPACITY_KWH, max(minimum_stored, base_floor + stored_need))
                 first_usable = slots[usable_index]["start"]
@@ -216,7 +245,14 @@ def _dynamic_reserve_profile(slots: list[dict[str, Any]], discharge_eff: float) 
 
 
 def _dynamic_safety_schedule(slots: list[dict[str, Any]], reserve_profile: list[dict[str, Any]], start_soc: float, charge_eff: float) -> dict[str, float]:
-    """Pre-plan safety energy before each future execution-reserve peak."""
+    """Old-EMS alpha27 safety precharge translated to native quarter deadlines.
+
+    Requirement N uses the reserve that applies after slot N and must therefore
+    be feasible by the end of that same quarter. For each demonstrable local
+    reserve peak, only the missing stored energy is allocated, using the cheapest
+    technically usable quarters before the deadline. Solar retains first priority
+    inside the shared 3.2 kW / 0.8 kWh-per-quarter charge ceiling.
+    """
     planned: dict[str, float] = {}
     if not slots:
         return planned
@@ -238,6 +274,10 @@ def _dynamic_safety_schedule(slots: list[dict[str, Any]], reserve_profile: list[
 
     slot_input_limit = MAX_CHARGE_POWER_W / 1000.0 / SLOTS_PER_HOUR
     for deadline_idx, required_floor in peaks:
+        # Same conservative estimate as old EMS: initial storage + free solar +
+        # safety energy already allocated for earlier peaks. Discretionary home
+        # discharge is ignored because the sequential simulation protects the
+        # execution floor itself.
         estimated = CAPACITY_KWH * start_soc / 100.0
         for sim_idx in range(deadline_idx + 1):
             slot = slots[sim_idx]
@@ -256,7 +296,10 @@ def _dynamic_safety_schedule(slots: list[dict[str, Any]], reserve_profile: list[
             start = _utc(slot["start"])
             assert start is not None
             solar_surplus = max(0.0, slot["solar_kwh"] - slot["home_kwh"])
-            charge_headroom_input = max(0.0, slot_input_limit - min(slot_input_limit, solar_surplus))
+            charge_headroom_input = max(
+                0.0,
+                slot_input_limit - min(slot_input_limit, solar_surplus),
+            )
             existing_stored = planned.get(slot["start"], 0.0)
             max_stored = max(0.0, charge_headroom_input * charge_eff - existing_stored)
             if max_stored > EPS:
@@ -308,7 +351,12 @@ def _select_native_trade(slots: list[dict[str, Any]], preview_result: dict[str, 
     min_margin = _finite(preview_result.get("minimum_trade_margin"), non_negative=True)
     if min_margin is None:
         min_margin = DEFAULT_MINIMUM_TRADE_MARGIN
-    valid_slots = [slot for slot in slots if not slot.get("price_fallback_used") and str(slot.get("price_kind") or "").lower() != "interpolated"]
+    valid_slots = [
+        slot
+        for slot in slots
+        if not slot.get("price_fallback_used")
+        and str(slot.get("price_kind") or "").lower() != "interpolated"
+    ]
     best: dict[str, Any] | None = None
     roundtrip = charge_eff * discharge_eff
     for i, charge in enumerate(valid_slots):
