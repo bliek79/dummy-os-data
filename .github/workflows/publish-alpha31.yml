@@ -1,0 +1,57 @@
+name: Publish alpha.31
+
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/publish-alpha31.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      VERSION: 0.2.0-alpha.31
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --upgrade pytest
+      - name: Final release gate
+        run: |
+          python -m compileall -q custom_components/dummy_os_data tests
+          python -m pytest -q
+          python -m json.tool custom_components/dummy_os_data/manifest.json >/dev/null
+          grep -F 'VERSION = "0.2.0-alpha.31"' custom_components/dummy_os_data/const.py
+          grep -F '"version": "0.2.0-alpha.31"' custom_components/dummy_os_data/manifest.json
+          test -f RELEASE_NOTES_0.2.0-alpha.31.md
+          test -f tests/test_alpha31_resilient_planner.py
+          test -f tests/test_alpha30_startup_performance.py
+          test -f tests/test_alpha29_price_buffer.py
+          python -m pytest -q tests/test_alpha31_resilient_planner.py tests/test_alpha30_startup_performance.py tests/test_alpha29_price_buffer.py tests/test_do_plan_input.py tests/test_do_plan_energy_need.py tests/test_do_plan_reserve_soc.py tests/test_do_plan_grid_support.py tests/test_do_plan_preview.py tests/test_do_plan_72h.py
+      - name: Build install assets
+        run: |
+          mkdir -p dist
+          cd custom_components
+          zip -qr ../dist/Dummy_OS_Energy_0.2.0-alpha.31_HA_install.zip dummy_os_data
+          cd ..
+          sha256sum dist/Dummy_OS_Energy_0.2.0-alpha.31_HA_install.zip | sed 's#dist/##' > dist/SHA256SUMS-0.2.0-alpha.31.txt
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: '${{ github.token }}'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$VERSION" -m "Dummy OS Energy $VERSION - Resilient Planner"
+          git push origin "$VERSION"
+          gh release create "$VERSION" \
+            dist/Dummy_OS_Energy_0.2.0-alpha.31_HA_install.zip \
+            dist/SHA256SUMS-0.2.0-alpha.31.txt \
+            --title "Dummy OS Energy 0.2.0-alpha.31 - Resilient Planner" \
+            --notes-file RELEASE_NOTES_0.2.0-alpha.31.md \
+            --prerelease \
+            --verify-tag
