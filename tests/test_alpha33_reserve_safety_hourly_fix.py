@@ -52,7 +52,7 @@ def test_dynamic_reserve_does_not_saturate_from_alpha32_quarter_rule() -> None:
     solar_soc = profile[8]["dynamic_floor_kwh"] / CAPACITY_KWH * 100.0
     assert profile[0]["next_usable_solar"] == slots[8]["start"]
     assert 12.0 < first_soc < 100.0
-    assert solar_soc == 12.0
+    assert abs(solar_soc - 12.0) < 1e-9
     assert first_soc > solar_soc
 
 
