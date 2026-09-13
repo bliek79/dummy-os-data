@@ -15,7 +15,7 @@ def build_do_plan_72h_sensors(coordinator: Any) -> list[Any]:
         _attr_unique_id = "do_plan_72h"
         _attr_suggested_object_id = "do_plan_72h"
         _attr_icon = "mdi:timeline-clock-outline"
-        _unrecorded_attributes = frozenset({"hours"})
+        _unrecorded_attributes = frozenset({"hours", "slots", "baseline", "candidate"})
 
         def _calculate_result(self, snapshot: dict[str, Any]) -> dict[str, Any]:
             input_result = _build_plan_input_from_snapshot(snapshot)
@@ -33,7 +33,7 @@ def build_do_plan_72h_sensors(coordinator: Any) -> list[Any]:
             return result
 
         def _initial_result(self) -> dict[str, Any]:
-            return {"status":"initializing","valid":False,"hour_count":0,"hours":[],"shadow_only":True,"active_use_permitted":False,"physical_execution_authority":False,"plan_store_write":False,"scheduler_invoked":False,"safety_chain_invoked":False,"service_calls_performed":False,"blockers":["planner_calculation_pending"]}
+            return {"status":"initializing","valid":False,"slot_count":0,"hour_count":0,"slots":[],"hours":[],"shadow_only":True,"active_use_permitted":False,"physical_execution_authority":False,"plan_store_write":False,"scheduler_invoked":False,"safety_chain_invoked":False,"service_calls_performed":False,"blockers":["planner_calculation_pending"]}
 
         @property
         def native_value(self) -> str:
