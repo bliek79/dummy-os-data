@@ -4,7 +4,7 @@ from __future__ import annotations
 
 DOMAIN = "dummy_os_data"
 NAME = "Dummy OS Energy"
-VERSION = "0.2.0-alpha.28"
+VERSION = "0.2.0-alpha.29"
 
 # Legacy Energy Forecast source key retained for config-entry compatibility only.
 # Energy Forecast production always consumes the canonical Source Home Power entity.
@@ -77,27 +77,3 @@ DEFAULT_SOLAR_ACTUAL_NORTH_DC_ENTITY = "sensor.sb3_6_1av_41_857_pv_power_a"
 DEFAULT_SOLAR_ACTUAL_SOUTH_DC_ENTITY = "sensor.sb3_6_1av_41_857_pv_power_b"
 
 PLATFORMS = ["sensor", "select", "binary_sensor", "switch", "datetime", "number"]
-
-STORAGE_VERSION = 1
-STORAGE_KEY = f"{DOMAIN}.home_forecast"
-ENERGY_STORE_SCHEMA_VERSION = 2
-ENERGY_EVALUATION_SCHEMA_VERSION = 1
-SOLAR_STORAGE_VERSION = 1
-SOLAR_STORAGE_KEY = f"{DOMAIN}.solar_evaluation"
-
-PROFILE_CONTRACT_VERSION = 1
-PROFILE_NORMAL = "normal"
-PROFILE_AWAY = "away"
-PROFILE_UNCLASSIFIED = "unclassified"
-PROFILE_MIXED = "mixed"
-PROFILE_LEARNING_OPTIONS = [PROFILE_NORMAL, PROFILE_AWAY]
-PROFILE_OPTIONS = [PROFILE_NORMAL, PROFILE_AWAY, PROFILE_UNCLASSIFIED]
-
-QUARTER_MINUTES = 15
-QUARTER_SECONDS = QUARTER_MINUTES * 60
-QUARTERS_PER_DAY = 96
-FORECAST_HORIZON_HOURS = 72
-FORECAST_SLOTS = FORECAST_HORIZON_HOURS * 60 // QUARTER_MINUTES
-MAX_HISTORY_DAYS = 400
-MIN_VALID_COVERAGE = 0.90
-SOLAR_MIN_VALID_COVERAGE = 0.90
