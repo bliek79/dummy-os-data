@@ -1,0 +1,61 @@
+name: Publish alpha.35
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/publish-alpha35.yml]
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --upgrade pytest
+      - name: Final release gate
+        run: |
+          python -m compileall -q custom_components/dummy_os_data tests
+          python -m pytest -q
+          python -m pytest -q tests/test_alpha35_shared_time_contract.py tests/test_alpha34_sequential_safety.py tests/test_alpha33_reserve_safety_hourly_fix.py tests/test_alpha32_native_planner_parity.py tests/test_alpha31_resilient_planner.py tests/test_alpha30_startup_performance.py tests/test_alpha29_price_buffer.py
+          python - <<'PYCODE'
+          import ast, json
+          from pathlib import Path
+          root = Path('custom_components/dummy_os_data')
+          version = next(ast.literal_eval(n.value) for n in ast.parse((root/'const.py').read_text()).body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'VERSION' for t in n.targets))
+          assert version == json.loads((root/'manifest.json').read_text())['version'] == '0.2.0-alpha.35'
+          assert Path('docs/alpha35_shared_time_contract.md').is_file()
+          assert Path('examples/alpha35_live_validation.jinja').is_file()
+          PYCODE
+      - name: Package and verify tested sources
+        run: |
+          mkdir -p dist
+          python - <<'PYCODE'
+          import zipfile
+          from pathlib import Path
+          root = Path('custom_components/dummy_os_data')
+          sources = [p for p in root.rglob('*') if p.is_file() and '__pycache__' not in p.parts and p.suffix != '.pyc']
+          target = Path('dist/Dummy_OS_Energy_0.2.0-alpha.35_HA_install.zip')
+          with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED) as archive:
+              for p in sorted(sources):
+                  archive.write(p, p.relative_to(root.parent))
+          with zipfile.ZipFile(target) as archive:
+              for p in sources:
+                  assert archive.read(str(p.relative_to(root.parent))) == p.read_bytes(), str(p)
+              assert not any('__pycache__' in name or name.endswith('.pyc') for name in archive.namelist())
+          PYCODE
+          sha256sum dist/*.zip | sed 's#dist/##' > dist/SHA256SUMS-0.2.0-alpha.35.txt
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: '${{ github.token }}'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a 0.2.0-alpha.35 -m 'Dummy OS Energy 0.2.0-alpha.35 - Joint Native Time Contract'
+          git push origin 0.2.0-alpha.35
+          gh release create 0.2.0-alpha.35 dist/*.zip dist/SHA256SUMS-0.2.0-alpha.35.txt \
+            --title 'Dummy OS Energy 0.2.0-alpha.35 - Joint Native Time Contract' \
+            --notes-file RELEASE_NOTES_0.2.0-alpha.35.md --prerelease --verify-tag
