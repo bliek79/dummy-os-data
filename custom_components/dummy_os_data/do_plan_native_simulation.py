@@ -3,8 +3,9 @@ from __future__ import annotations
 from typing import Any
 from custom_components.dummy_os_data.do_plan_native_common import (
     CAPACITY_KWH, MIN_SOC_PERCENT, MAX_CHARGE_POWER_W, MAX_DISCHARGE_POWER_W,
-    SLOTS_PER_HOUR, EPS, _utc, _future_solar_charge_potential,
+    SLOTS_PER_HOUR, EPS, _future_solar_charge_potential,
 )
+
 
 def _simulate(
     *,
@@ -182,12 +183,13 @@ def _simulate(
 
 
 def _aggregate_hours(slots: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Build the 60-minute Apex contract from four native quarter results."""
     hours: list[dict[str, Any]] = []
     for offset in range(0, len(slots), SLOTS_PER_HOUR):
         group = slots[offset : offset + SLOTS_PER_HOUR]
         if not group:
             continue
-        energy_keys = (
+        flow_keys = (
             "solar_to_home_kwh", "solar_to_battery_kwh", "solar_to_grid_kwh", "grid_to_home_kwh",
             "grid_to_battery_kwh", "grid_to_battery_safety_kwh", "grid_to_battery_trade_kwh",
             "battery_to_home_kwh", "battery_to_grid_kwh",
@@ -205,6 +207,9 @@ def _aggregate_hours(slots: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "start": group[0]["start"],
                 "end": group[-1]["end"],
                 "slot_count": len(group),
+                # Apex energy inputs are exact sums of the four native quarters.
+                "home_kwh": round(sum(item["home_kwh"] for item in group), 3),
+                "solar_kwh": round(sum(item["solar_kwh"] for item in group), 3),
                 "start_soc_percent": group[0]["start_soc_percent"],
                 "end_soc_percent": group[-1]["end_soc_percent"],
                 "dynamic_reserve_start_soc_percent": group[0]["dynamic_reserve_start_soc_percent"],
@@ -219,7 +224,7 @@ def _aggregate_hours(slots: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "solar_horizon_complete": all(item.get("solar_horizon_complete") is True for item in group),
                 "execution_headroom_soc_percent": group[-1]["execution_headroom_soc_percent"],
                 "action": "+".join(actions),
-                **{key: round(sum(item[key] for item in group), 3) for key in energy_keys},
+                **{key: round(sum(item[key] for item in group), 3) for key in flow_keys},
             }
         )
     return hours
