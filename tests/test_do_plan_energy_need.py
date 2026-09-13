@@ -66,14 +66,14 @@ def test_real_zero_is_valid_not_missing() -> None:
     assert result["energy_need_until_solar_kwh"] == 0.0
 
 
-def test_missing_input_blocks_instead_of_zero_fallback() -> None:
+def test_missing_relevant_input_blocks_instead_of_zero_fallback() -> None:
     start = datetime(2026, 9, 9, 0, 0, tzinfo=timezone.utc)
     inp = _input(start=start, usable_at=4)
     inp["rows"][1]["solar_kwh"] = None
     inp["fully_valid_hours"] = 71
     result = MOD.build_do_plan_energy_need(input_result=inp, soc_percent=50.0, now=start)
     assert result["status"] == "blocked"
-    assert "planner_input_not_fully_valid" in result["blockers"]
+    assert "row_1_solar_missing" in result["blockers"]
     assert result["energy_need_until_solar_kwh"] is None
 
 
