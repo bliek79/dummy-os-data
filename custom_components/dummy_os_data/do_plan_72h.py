@@ -11,6 +11,46 @@ from custom_components.dummy_os_data.do_plan_native_common import (
 from custom_components.dummy_os_data.do_plan_native_simulation import _simulate, _aggregate_hours
 
 
+def _preview_trade_fallback(slots: list[dict[str, Any]], preview_result: dict[str, Any], charge_eff: float, discharge_eff: float) -> dict[str, Any] | None:
+    by_start = {slot["start"]: slot for slot in slots}
+    candidates: list[tuple[float, str, str, str]] = []
+    if preview_result.get("self_use_trade_profitable"):
+        margin = _finite(preview_result.get("best_self_use_margin"))
+        charge = preview_result.get("best_self_use_charge_time")
+        discharge = preview_result.get("best_self_use_discharge_time")
+        if margin is not None and isinstance(charge, str) and isinstance(discharge, str):
+            candidates.append((margin, charge, discharge, "self_use"))
+    if preview_result.get("export_trade_profitable"):
+        margin = _finite(preview_result.get("best_export_margin"))
+        charge = preview_result.get("best_export_charge_time")
+        discharge = preview_result.get("best_export_discharge_time")
+        if margin is not None and isinstance(charge, str) and isinstance(discharge, str):
+            candidates.append((margin, charge, discharge, "export"))
+    candidates.sort(reverse=True)
+    for margin, charge_time, discharge_time, kind in candidates:
+        charge = by_start.get(charge_time)
+        discharge = by_start.get(discharge_time)
+        if charge is None or discharge is None:
+            continue
+        if charge.get("price_fallback_used") or discharge.get("price_fallback_used"):
+            continue
+        if str(charge.get("price_kind") or "").lower() == "interpolated" or str(discharge.get("price_kind") or "").lower() == "interpolated":
+            continue
+        effective_cost = charge["import_price"] / (charge_eff * discharge_eff)
+        return {
+            "kind": kind,
+            "margin": margin,
+            "charge_time": charge_time,
+            "charge_price": charge["import_price"],
+            "discharge_time": discharge_time,
+            "discharge_price": discharge["import_price"] if kind == "self_use" else discharge["export_price"],
+            "effective_charge_cost": effective_cost,
+            "minimum_trade_margin": _finite(preview_result.get("minimum_trade_margin"), non_negative=True) or 0.10,
+            "source": "preview_compatibility_fallback",
+        }
+    return None
+
+
 def build_do_plan_72h(*, input_result: dict[str, Any], reserve_result: dict[str, Any], preview_result: dict[str, Any], grid_support_result: dict[str, Any] | None = None) -> dict[str, Any]:
     """Build native 288-slot EMS parity simulation and hourly Apex aggregation."""
     effective_horizon = input_result.get("effective_horizon_hours")
@@ -82,6 +122,8 @@ def build_do_plan_72h(*, input_result: dict[str, Any], reserve_result: dict[str,
     external_safety, external_safety_source = _external_safety_schedule(slots, preview_result, grid_support_result)
     safety_slots = {key: max(dynamic_safety.get(key, 0.0), external_safety.get(key, 0.0)) for key in set(dynamic_safety) | set(external_safety)}
     trade = _select_native_trade(slots, preview_result, charge_eff, discharge_eff)
+    if trade is None:
+        trade = _preview_trade_fallback(slots, preview_result, charge_eff, discharge_eff)
 
     baseline = _simulate(slots=slots, start_soc=soc, reserve_profile=reserve_profile, safety_slots=safety_slots, trade=None, charge_eff=charge_eff, discharge_eff=discharge_eff)
     candidate = _simulate(slots=slots, start_soc=soc, reserve_profile=reserve_profile, safety_slots=safety_slots, trade=trade, charge_eff=charge_eff, discharge_eff=discharge_eff)
