@@ -1,6 +1,47 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import sys
+import types
+
+# prices.py is an integration module and CI deliberately does not install
+# Home Assistant. Provide the minimal import-time stubs required to exercise
+# the pure price-buffer helpers without changing their production location.
+if "homeassistant" not in sys.modules:
+    homeassistant = types.ModuleType("homeassistant")
+    homeassistant.__path__ = []
+    sys.modules["homeassistant"] = homeassistant
+
+core = types.ModuleType("homeassistant.core")
+core.Event = object
+core.HomeAssistant = object
+core.callback = lambda func: func
+sys.modules["homeassistant.core"] = core
+
+helpers = types.ModuleType("homeassistant.helpers")
+helpers.__path__ = []
+sys.modules["homeassistant.helpers"] = helpers
+
+aiohttp_client = types.ModuleType("homeassistant.helpers.aiohttp_client")
+aiohttp_client.async_get_clientsession = lambda *_args, **_kwargs: None
+sys.modules["homeassistant.helpers.aiohttp_client"] = aiohttp_client
+
+helpers_event = types.ModuleType("homeassistant.helpers.event")
+helpers_event.async_track_state_change_event = lambda *_args, **_kwargs: None
+helpers_event.async_track_time_interval = lambda *_args, **_kwargs: None
+sys.modules["homeassistant.helpers.event"] = helpers_event
+
+util = types.ModuleType("homeassistant.util")
+util.__path__ = []
+sys.modules["homeassistant.util"] = util
+
+dt_module = types.ModuleType("homeassistant.util.dt")
+dt_module.UTC = timezone.utc
+dt_module.utcnow = lambda: datetime.now(timezone.utc)
+dt_module.as_local = lambda value: value
+dt_module.parse_datetime = lambda value: datetime.fromisoformat(value)
+sys.modules["homeassistant.util.dt"] = dt_module
+util.dt = dt_module
 
 from custom_components.dummy_os_data.prices import (
     PLANNER_PRICE_SLOT_COUNT,
