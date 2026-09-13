@@ -8,5 +8,5 @@ _SPEC = importlib.util.spec_from_file_location("release_consistency_core", _PATH
 assert _SPEC is not None and _SPEC.loader is not None
 _CORE = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_CORE)
-_CORE.VERSION = "0.2.0-alpha.31"
+_CORE.VERSION = "0.2.0-alpha.32"
 ReleaseConsistencyTests = _CORE.ReleaseConsistencyTests
