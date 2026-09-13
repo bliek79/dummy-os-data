@@ -95,15 +95,12 @@ def test_dynamic_reserve_is_not_flat_when_future_need_changes():
     assert out["dynamic_reserve_max_soc_percent"] > out["dynamic_reserve_min_soc_percent"]
 
 
-def test_usable_solar_requires_full_eight_consecutive_quarters():
-    inp7, reserve7, preview7 = _native_input(usable_solar_slots=7)
-    out7 = build_do_plan_72h(input_result=inp7, reserve_result=reserve7, preview_result=preview7)
-    assert out7["hours"][0]["next_usable_solar"] is None
-    inp8, reserve8, preview8 = _native_input(usable_solar_slots=8)
-    out8 = build_do_plan_72h(input_result=inp8, reserve_result=reserve8, preview_result=preview8)
-    assert out8["hours"][0]["next_usable_solar"] is not None
-    assert out8["usable_solar_consecutive_slots"] == 8
-    assert out8["usable_solar_duration_hours"] == 2.0
+def test_usable_solar_preserves_two_consecutive_hour_meaning():
+    inp, reserve, preview = _native_input(usable_solar_slots=8)
+    out = build_do_plan_72h(input_result=inp, reserve_result=reserve, preview_result=preview)
+    assert out["hours"][0]["next_usable_solar"] is not None
+    assert out["usable_solar_consecutive_slots"] == 8
+    assert out["usable_solar_duration_hours"] == 2.0
 
 
 def test_native_charge_and_discharge_limits_are_quarter_based():
@@ -122,6 +119,8 @@ def test_hourly_apex_energy_is_sum_of_four_native_slots():
     first_hour = out["hours"][0]
     for key in ("solar_to_battery_kwh", "grid_to_battery_safety_kwh", "grid_to_battery_trade_kwh", "battery_to_home_kwh", "battery_to_grid_kwh"):
         assert abs(first_hour[key] - round(sum(slot[key] for slot in first_slots), 3)) < 0.002
+    assert first_hour["home_kwh"] == round(sum(slot["home_kwh"] for slot in first_slots), 3)
+    assert first_hour["solar_kwh"] == round(sum(slot["solar_kwh"] for slot in first_slots), 3)
     assert first_hour["end_soc_percent"] == first_slots[-1]["end_soc_percent"]
     assert first_hour["dynamic_reserve_end_soc_percent"] == first_slots[-1]["dynamic_reserve_end_soc_percent"]
 
