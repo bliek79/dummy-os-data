@@ -1,0 +1,30 @@
+name: Alpha34 source review
+on:
+  push:
+    branches: [alpha34-sequential-safety-fix]
+    paths: [.github/workflows/alpha34-source-review.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: energy
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: bliek79/dummy-os-anker-ems
+          path: old-ems
+          persist-credentials: false
+      - name: Snapshot public source without git metadata
+        run: |
+          git -C energy rev-parse HEAD > energy-source-sha.txt
+          git -C old-ems rev-parse HEAD > old-ems-source-sha.txt
+          tar --exclude=.git -czf alpha34-sources.tar.gz energy old-ems energy-source-sha.txt old-ems-source-sha.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alpha34-source-review
+          path: alpha34-sources.tar.gz
+          retention-days: 2
