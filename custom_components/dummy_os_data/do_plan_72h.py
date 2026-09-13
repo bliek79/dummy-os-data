@@ -3,10 +3,10 @@ from __future__ import annotations
 from typing import Any
 from custom_components.dummy_os_data.do_plan_native_common import (
     HOURS, SLOTS, SLOTS_PER_HOUR, SLOT_MINUTES, CHARGE_EFFICIENCY_PERCENT,
-    DISCHARGE_EFFICIENCY_PERCENT, EXECUTION_BUFFER_PERCENT,
-    USABLE_SOLAR_CONSECUTIVE_SLOTS, EPS, _finite, _blocked, _expand_native_slots,
-    _dynamic_reserve_profile, _dynamic_safety_schedule, _external_safety_schedule,
-    _select_native_trade,
+    DISCHARGE_EFFICIENCY_PERCENT, EXECUTION_BUFFER_PERCENT, MIN_SOC_PERCENT,
+    SAFETY_RESERVE_PERCENT, USABLE_SOLAR_CONSECUTIVE_SLOTS, EPS, _finite,
+    _blocked, _expand_native_slots, _dynamic_reserve_profile,
+    _dynamic_safety_schedule, _external_safety_schedule, _select_native_trade,
 )
 from custom_components.dummy_os_data.do_plan_native_simulation import _simulate, _aggregate_hours
 
@@ -149,6 +149,7 @@ def build_do_plan_72h(*, input_result: dict[str, Any], reserve_result: dict[str,
     dynamic_reserve_values = [slot["dynamic_reserve_end_soc_percent"] for slot in candidate["slots"]]
     execution_reserve_values = [slot["execution_reserve_end_soc_percent"] for slot in candidate["slots"]]
     headroom_values = [slot["execution_headroom_soc_percent"] for slot in candidate["slots"]]
+    reserve_target = _finite(reserve_result.get("reserve_soc_target_percent"), non_negative=True)
 
     return {
         **base,
@@ -168,6 +169,8 @@ def build_do_plan_72h(*, input_result: dict[str, Any], reserve_result: dict[str,
         "solar_displacement_kwh": round(solar_displacement, 3),
         "losses_included": True,
         "reserve_recalculated": True,
+        "reserve_target_soc_percent": round(reserve_target, 3) if reserve_target is not None else None,
+        "simulation_reserve_floor_soc_percent": MIN_SOC_PERCENT + SAFETY_RESERVE_PERCENT,
         "reserve_model": "old_ems_dynamic_need_until_next_usable_solar_native_15m",
         "usable_solar_consecutive_slots": USABLE_SOLAR_CONSECUTIVE_SLOTS,
         "usable_solar_duration_hours": USABLE_SOLAR_CONSECUTIVE_SLOTS * SLOT_MINUTES / 60.0,
@@ -178,7 +181,9 @@ def build_do_plan_72h(*, input_result: dict[str, Any], reserve_result: dict[str,
         "minimum_execution_headroom_soc_percent": round(min(headroom_values), 3) if headroom_values else None,
         "execution_buffer_percent": EXECUTION_BUFFER_PERCENT,
         "dynamic_safety_slot_count": sum(1 for value in dynamic_safety.values() if value > EPS),
-        "safety_charge_source": f"native_dynamic_reserve+{external_safety_source}",
+        "safety_charge_source": external_safety_source,
+        "dynamic_safety_charge_source": "native_dynamic_reserve",
+        "safety_charge_sources": ["native_dynamic_reserve", external_safety_source],
         "grid_support_status": grid_support_result.get("status") if grid_support_result is not None else None,
         "grid_support_fallback_to_preview": bool(grid_support_result is not None and grid_support_result.get("status") not in {"ready", "degraded", "infeasible"}),
         "missing_as_zero_used": False,
