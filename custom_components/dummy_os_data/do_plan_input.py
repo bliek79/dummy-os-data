@@ -18,6 +18,7 @@ NATIVE_RESOLUTION_MINUTES = 15
 NATIVE_SLOT_COUNT = 288
 PLANNER_RESOLUTION_MINUTES = 60
 QUARTERS_PER_HOUR = 4
+INTERPOLATED_KIND = "interpolated"
 
 
 def _get(value: Any, key: str) -> Any:
@@ -60,6 +61,99 @@ def _index_points(points: Iterable[Any]) -> dict[datetime, Any]:
         if start is not None:
             indexed[start] = point
     return indexed
+
+
+def _kind_family(kind: Any) -> str | None:
+    value = str(kind or "").lower()
+    if value.startswith("known"):
+        return "known"
+    if value.startswith("forecast"):
+        return "forecast"
+    return None
+
+
+def _price_payload(indexed: dict[datetime, Any], start: datetime) -> dict[str, Any]:
+    """Return an exact price point or a tightly bounded isolated-gap interpolation.
+
+    Interpolation is permitted only when the exact slot is missing/invalid, both
+    immediate neighbours are real finite points, and both neighbours belong to
+    the same semantic source family (known or forecast). It is never recursive.
+    """
+    point = indexed.get(start)
+    import_price = _finite(_get(point, "import_all_in")) if point is not None else None
+    export_price = _finite(_get(point, "export_all_in")) if point is not None else None
+    if import_price is not None and export_price is not None:
+        return {
+            "import_price": import_price,
+            "export_price": export_price,
+            "kind": _get(point, "kind"),
+            "source_resolution_minutes": _get(point, "source_resolution_minutes"),
+            "fallback_used": False,
+            "fallback_method": None,
+            "fallback_previous_start": None,
+            "fallback_next_start": None,
+        }
+
+    previous_start = start - timedelta(minutes=NATIVE_RESOLUTION_MINUTES)
+    next_start = start + timedelta(minutes=NATIVE_RESOLUTION_MINUTES)
+    previous = indexed.get(previous_start)
+    following = indexed.get(next_start)
+    if previous is None or following is None:
+        return {
+            "import_price": None,
+            "export_price": None,
+            "kind": None,
+            "source_resolution_minutes": None,
+            "fallback_used": False,
+            "fallback_method": None,
+            "fallback_previous_start": None,
+            "fallback_next_start": None,
+        }
+
+    previous_kind = _get(previous, "kind")
+    following_kind = _get(following, "kind")
+    previous_family = _kind_family(previous_kind)
+    following_family = _kind_family(following_kind)
+    previous_import = _finite(_get(previous, "import_all_in"))
+    previous_export = _finite(_get(previous, "export_all_in"))
+    following_import = _finite(_get(following, "import_all_in"))
+    following_export = _finite(_get(following, "export_all_in"))
+    neighbour_values = (
+        previous_import,
+        previous_export,
+        following_import,
+        following_export,
+    )
+    if (
+        previous_family is None
+        or previous_family != following_family
+        or str(previous_kind or "").lower() == INTERPOLATED_KIND
+        or str(following_kind or "").lower() == INTERPOLATED_KIND
+        or any(value is None for value in neighbour_values)
+    ):
+        return {
+            "import_price": None,
+            "export_price": None,
+            "kind": None,
+            "source_resolution_minutes": None,
+            "fallback_used": False,
+            "fallback_method": None,
+            "fallback_previous_start": None,
+            "fallback_next_start": None,
+        }
+
+    assert previous_import is not None and previous_export is not None
+    assert following_import is not None and following_export is not None
+    return {
+        "import_price": (previous_import + following_import) / 2.0,
+        "export_price": (previous_export + following_export) / 2.0,
+        "kind": INTERPOLATED_KIND,
+        "source_resolution_minutes": NATIVE_RESOLUTION_MINUTES,
+        "fallback_used": True,
+        "fallback_method": "neighbor_average",
+        "fallback_previous_start": previous_start.isoformat(),
+        "fallback_next_start": next_start.isoformat(),
+    }
 
 
 def _validate_contract(contract: dict[str, Any]) -> list[str]:
@@ -125,6 +219,28 @@ def _signature(rows: list[dict[str, Any]]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _effective_horizon(rows: list[dict[str, Any]]) -> tuple[int, int | None, str | None, bool]:
+    first_invalid: int | None = None
+    reason: str | None = None
+    for index, row in enumerate(rows):
+        if row.get("fully_valid") is True:
+            continue
+        first_invalid = index
+        missing: list[str] = []
+        if row.get("home_valid") is not True:
+            missing.append("home")
+        if row.get("solar_valid") is not True:
+            missing.append("solar")
+        if row.get("price_valid") is not True:
+            missing.append("price")
+        reason = "missing_" + "_".join(missing or ["input"])
+        break
+    if first_invalid is None:
+        return len(rows), None, None, False
+    trailing_only = all(row.get("fully_valid") is not True for row in rows[first_invalid:])
+    return first_invalid, first_invalid, reason, trailing_only
+
+
 def build_do_plan_input_72h(
     *,
     contract: dict[str, Any],
@@ -134,10 +250,12 @@ def build_do_plan_input_72h(
     prices_status: str | None = None,
     prices_freshness: str | None = None,
 ) -> dict[str, Any]:
-    """Join Forecast, Solar and Prices on exact timestamps without fallback.
+    """Join Forecast, Solar and Prices on exact timestamps with bounded resilience.
 
-    The function is deliberately observer-only. It never writes a plan, calls a
-    scheduler or exercises physical battery control.
+    Raw source data is never zero-filled or forward-filled. A single isolated
+    missing price quarter may be reconstructed from its two immediate real
+    neighbours, with explicit provenance. Physical execution authority remains
+    false; this layer only publishes planner inputs and diagnostics.
     """
     contract_blockers = _validate_contract(contract)
     base = {
@@ -162,6 +280,7 @@ def build_do_plan_input_72h(
         "shadow_only": True,
         "active_use_permitted": False,
         "published_pairs": False,
+        "price_interpolation_policy": "single_isolated_slot_neighbor_average_same_source_family",
     }
     if contract_blockers:
         return {
@@ -176,6 +295,13 @@ def build_do_plan_input_72h(
             "fully_valid_hours": 0,
             "missing_solar_hours": PLANNER_HOUR_COUNT,
             "missing_price_hours": PLANNER_HOUR_COUNT,
+            "effective_horizon_hours": 0,
+            "valid_through": None,
+            "first_invalid_index": 0,
+            "first_invalid_reason": "contract_invalid",
+            "trailing_incomplete_only": False,
+            "degraded_components": [],
+            "interpolated_price_slots": 0,
             "rows_signature": None,
             "rows": [],
         }
@@ -187,6 +313,7 @@ def build_do_plan_input_72h(
     valid_solar_hours = 0
     valid_price_hours = 0
     fully_valid_hours = 0
+    interpolated_price_slots = 0
 
     for hour in contract["hours"]:
         start = _aware_utc(hour["start"])
@@ -234,9 +361,7 @@ def build_do_plan_input_72h(
         for quarter_start in quarter_starts:
             point = solar_by_start.get(quarter_start)
             value = _finite(_get(point, "total_kwh"), non_negative=True) if point is not None else None
-            solar_quarters.append(
-                {"start": quarter_start.isoformat(), "kwh": value}
-            )
+            solar_quarters.append({"start": quarter_start.isoformat(), "kwh": value})
             if value is not None:
                 solar_values.append(value)
         solar_valid = len(solar_values) == QUARTERS_PER_HOUR
@@ -248,28 +373,29 @@ def build_do_plan_input_72h(
         export_values: list[float] = []
         price_quarters: list[dict[str, Any]] = []
         for quarter_start in quarter_starts:
-            point = prices_by_start.get(quarter_start)
-            import_price = _finite(_get(point, "import_all_in")) if point is not None else None
-            export_price = _finite(_get(point, "export_all_in")) if point is not None else None
+            payload = _price_payload(prices_by_start, quarter_start)
+            import_price = payload["import_price"]
+            export_price = payload["export_price"]
+            if payload["fallback_used"]:
+                interpolated_price_slots += 1
             price_quarters.append(
                 {
                     "start": quarter_start.isoformat(),
                     "import_price": import_price,
                     "export_price": export_price,
-                    "kind": _get(point, "kind") if point is not None else None,
-                    "source_resolution_minutes": (
-                        _get(point, "source_resolution_minutes") if point is not None else None
-                    ),
+                    "kind": payload["kind"],
+                    "source_resolution_minutes": payload["source_resolution_minutes"],
+                    "fallback_used": payload["fallback_used"],
+                    "fallback_method": payload["fallback_method"],
+                    "fallback_previous_start": payload["fallback_previous_start"],
+                    "fallback_next_start": payload["fallback_next_start"],
                 }
             )
             if import_price is not None:
                 import_values.append(import_price)
             if export_price is not None:
                 export_values.append(export_price)
-        price_valid = (
-            len(import_values) == QUARTERS_PER_HOUR
-            and len(export_values) == QUARTERS_PER_HOUR
-        )
+        price_valid = len(import_values) == QUARTERS_PER_HOUR and len(export_values) == QUARTERS_PER_HOUR
         import_price = round(sum(import_values) / QUARTERS_PER_HOUR, 6) if price_valid else None
         export_price = round(sum(export_values) / QUARTERS_PER_HOUR, 6) if price_valid else None
         if price_valid:
@@ -298,14 +424,18 @@ def build_do_plan_input_72h(
                 "quarter_count": QUARTERS_PER_HOUR,
                 "solar_quarters": solar_quarters,
                 "price_quarters": price_quarters,
+                "price_interpolated": any(q.get("fallback_used") is True for q in price_quarters),
             }
         )
 
     blockers: list[str] = []
+    degraded_components: list[str] = []
     if valid_solar_hours != PLANNER_HOUR_COUNT:
         blockers.append("solar_hours_incomplete")
+        degraded_components.append("solar")
     if valid_price_hours != PLANNER_HOUR_COUNT:
         blockers.append("price_hours_incomplete")
+        degraded_components.append("prices")
 
     runtime_blockers = [str(value) for value in (contract.get("runtime_blockers") or [])]
     if contract.get("forecast_operational_input_ok") is not True:
@@ -318,8 +448,11 @@ def build_do_plan_input_72h(
         runtime_blockers.append(f"prices_freshness_{prices_freshness or 'unknown'}")
     runtime_blockers = sorted(set(runtime_blockers))
 
+    effective_horizon_hours, first_invalid_index, first_invalid_reason, trailing_incomplete_only = _effective_horizon(rows)
+    valid_through = rows[effective_horizon_hours - 1]["end"] if effective_horizon_hours > 0 else contract.get("planner_start")
+
     if blockers:
-        status = "partial"
+        status = "degraded"
     elif runtime_blockers:
         status = "runtime_blocked"
     else:
@@ -340,6 +473,13 @@ def build_do_plan_input_72h(
         "fully_valid_hours": fully_valid_hours,
         "missing_solar_hours": PLANNER_HOUR_COUNT - valid_solar_hours,
         "missing_price_hours": PLANNER_HOUR_COUNT - valid_price_hours,
+        "effective_horizon_hours": effective_horizon_hours,
+        "valid_through": valid_through,
+        "first_invalid_index": first_invalid_index,
+        "first_invalid_reason": first_invalid_reason,
+        "trailing_incomplete_only": trailing_incomplete_only,
+        "degraded_components": sorted(set(degraded_components)),
+        "interpolated_price_slots": interpolated_price_slots,
         "rows_signature": _signature(rows),
         "rows": rows,
     }
