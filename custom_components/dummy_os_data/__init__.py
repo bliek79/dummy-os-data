@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from homeassistant.config_entries import ConfigEntry
@@ -142,6 +143,35 @@ _ENTITY_ID_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
 )
 
 
+async def _async_noop() -> None:
+    """Temporarily replace Weather setup while local Home state initializes."""
+
+
+async def _async_setup_cloud_sources(
+    coordinator: DummyOSHomeDataCoordinator,
+    weather_setup,
+) -> None:
+    """Initialize cloud-backed sources outside Home Assistant's setup critical path."""
+    results = await asyncio.gather(
+        weather_setup(),
+        coordinator.prices.async_setup(),
+        coordinator.solar.async_setup(),
+        return_exceptions=True,
+    )
+    for source_name, result in zip(("weather", "prices", "solar"), results, strict=True):
+        if isinstance(result, BaseException):
+            _LOGGER.warning("Dummy OS Data %s startup failed in background: %s", source_name, result)
+
+    try:
+        await coordinator.degree_days.async_setup()
+    except Exception as err:
+        _LOGGER.warning("Dummy OS Data degree-days startup failed in background: %s", err)
+
+    # Planner/model sensors listen to the Home coordinator. One consolidated
+    # notification republishes their cached results after source initialization.
+    coordinator._notify()
+
+
 def _is_obsolete_home_input_state(state: State | None) -> bool:
     """Return whether a state has the exact temporary alpha.11.4 signature."""
     if state is None:
@@ -165,20 +195,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry) 
         hass.config_entries.async_update_entry(entry, title=NAME)
 
     coordinator = DummyOSHomeDataCoordinator(hass, entry)
-    await coordinator.async_setup()
+
+    # Home history/state is local and should be available immediately. Prevent
+    # its normal Weather setup call from turning config-entry setup into a cloud wait.
+    weather_setup = coordinator.weather.async_setup
+    coordinator.weather.async_setup = _async_noop
+    try:
+        await coordinator.async_setup()
+    finally:
+        coordinator.weather.async_setup = weather_setup
 
     coordinator.degree_days = DummyOSDegreeDaysCoordinator(hass, coordinator.weather)
-    await coordinator.degree_days.async_setup()
-
     coordinator.prices = DummyOSPricesCoordinator(hass, entry)
-    await coordinator.prices.async_setup()
-
     coordinator.solar = DummyOSSolarCoordinator(hass, entry)
-    await coordinator.solar.async_setup()
 
     entry.runtime_data = coordinator
 
+    # Register all platforms before any external source fetch. Entities expose
+    # initializing/not_loaded until the background source wave supplies data.
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    source_setup_task = hass.async_create_task(
+        _async_setup_cloud_sources(coordinator, weather_setup)
+    )
+    coordinator._source_setup_task = source_setup_task
+    entry.async_on_unload(source_setup_task.cancel)
+
     _async_remove_degree_days_runtime_states(hass)
     _async_migrate_generated_entity_ids(hass)
     _async_remove_obsolete_home_input_entities(hass)
@@ -299,6 +341,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry)
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
+        source_setup_task = getattr(entry.runtime_data, "_source_setup_task", None)
+        if source_setup_task is not None and not source_setup_task.done():
+            source_setup_task.cancel()
+            try:
+                await source_setup_task
+            except asyncio.CancelledError:
+                pass
         solar = getattr(entry.runtime_data, "solar", None)
         if solar is not None:
             await solar.async_shutdown()
