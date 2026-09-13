@@ -23,6 +23,17 @@ def _stable_material(value: Any) -> str:
 
 
 def build_plan_store_bridge_refresh_key(snapshot: dict[str, Any]) -> str:
+    # Diagnostic observation times must not turn every repeated notification into
+    # an expensive full replay. Refresh on window or actual input changes. The
+    # retained result keeps its original projection reference, never relabelled.
+    bridge = snapshot.get("soc_bridge")
+    if isinstance(bridge, dict):
+        snapshot = dict(snapshot)
+        snapshot["soc_percent"] = bridge.get("measured_soc_percent")
+        snapshot["soc_bridge"] = {key: bridge.get(key) for key in (
+            "valid", "method", "charge_power_w", "discharge_power_w",
+            "measured_soc_percent", "blockers", "projected_at",
+        )}
     now = snapshot.get("now")
     if isinstance(now, datetime):
         now_utc = now.astimezone(timezone.utc); quarter = now_utc.replace(minute=(now_utc.minute // 15) * 15, second=0, microsecond=0).isoformat()

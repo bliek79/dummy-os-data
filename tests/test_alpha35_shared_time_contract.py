@@ -298,3 +298,35 @@ def test_expired_buffer_keeps_exact_missing_tail():
     tc=build_time_contract(begin+timedelta(hours=6));chosen=c.planner_points_for_window(tc)
     assert len(chosen)==280 and c.planner_price_missing_slots==8
     assert c.planner_price_missing_starts==list(expected_starts(tc)[-8:])
+
+
+def _material_key_function():
+    import hashlib
+    source=(ROOT/'custom_components/dummy_os_data/do_plan_grid_support_sensor.py').read_text()
+    nodes=[n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef) and n.name in {'_stable_material','build_plan_store_bridge_refresh_key'}]
+    ns={'Any':object,'datetime':datetime,'timezone':timezone,'hashlib':hashlib}
+    exec(compile(ast.Module(body=nodes,type_ignores=[]),'<material-key>','exec'),ns)
+    return ns['build_plan_store_bridge_refresh_key']
+
+
+def test_repeated_notifications_do_not_force_safety_replay():
+    key=_material_key_function()
+    c=build_time_contract(datetime(2026,9,13,18,16,tzinfo=UTC))
+    bridge=project_soc_to_window(contract=c,soc=60,charge_power_w=0,discharge_power_w=500)
+    a={'now':utc(c['reference_utc']),'time_contract':c,'soc_bridge':bridge,'soc_percent':bridge['planner_start_soc_percent']}
+    c2=build_time_contract(datetime(2026,9,13,18,17,tzinfo=UTC))
+    bridge2=project_soc_to_window(contract=c2,soc=60,charge_power_w=0,discharge_power_w=500)
+    b={'now':utc(c2['reference_utc']),'time_contract':c2,'soc_bridge':bridge2,'soc_percent':bridge2['planner_start_soc_percent']}
+    assert a['soc_percent']!=b['soc_percent']
+    assert key(a)==key(b)
+    assert a['soc_bridge']['observed_at']==c['reference_utc']
+
+
+@pytest.mark.parametrize('field,value',[('measured_soc_percent',61),('discharge_power_w',600),('projected_at','2026-09-13T18:45:00+00:00')])
+def test_material_soc_or_window_change_invalidates_cached_plan(field,value):
+    key=_material_key_function()
+    c=build_time_contract(datetime(2026,9,13,18,16,tzinfo=UTC))
+    bridge=project_soc_to_window(contract=c,soc=60,charge_power_w=0,discharge_power_w=500)
+    a={'now':utc(c['reference_utc']),'time_contract':c,'soc_bridge':bridge,'soc_percent':bridge['planner_start_soc_percent']}
+    b=deepcopy(a);b['soc_bridge'][field]=value
+    assert key(a)!=key(b)
