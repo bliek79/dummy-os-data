@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import logging
-from typing import Any
+from typing import Any, Iterable
 
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -42,6 +42,17 @@ SOURCE_ATTRIBUTION = "Data provided by Stroomvoorspeller.nl (CC BY 4.0)"
 REFRESH_INTERVAL = timedelta(minutes=30)
 SOURCE_STALE_AFTER = timedelta(hours=28)
 
+PRICE_BUFFER_HOURS = 76
+PRICE_BUFFER_SLOT_COUNT = PRICE_BUFFER_HOURS * 60 // QUARTER_MINUTES
+PLANNER_HORIZON_HOURS = 72
+PLANNER_PRICE_SLOT_COUNT = PLANNER_HORIZON_HOURS * 60 // QUARTER_MINUTES
+
+_PRICE_SOURCE_PRIORITY = {
+    "forecast_hour": 10,
+    "known_hourly_fallback": 20,
+    "known_pt15m": 30,
+}
+
 
 @dataclass(slots=True)
 class PricePoint:
@@ -75,6 +86,58 @@ class PricePoint:
         }
 
 
+def _utc_start(value: datetime) -> datetime:
+    """Canonicalize an aware timestamp for exact slot indexing."""
+    if value.tzinfo is None:
+        raise ValueError("price timestamp must be timezone-aware")
+    return value.astimezone(dt_util.UTC)
+
+
+def _expected_quarter_starts(start: datetime, slot_count: int) -> list[datetime]:
+    """Return exact consecutive 15-minute slot starts."""
+    canonical_start = _utc_start(start)
+    return [
+        canonical_start + timedelta(minutes=index * QUARTER_MINUTES)
+        for index in range(slot_count)
+    ]
+
+
+def _deduplicate_price_points(
+    points: Iterable[PricePoint],
+) -> tuple[dict[datetime, PricePoint], int]:
+    """Index points by UTC timestamp and keep the strongest source on duplicates."""
+    indexed: dict[datetime, PricePoint] = {}
+    duplicate_count = 0
+    for point in points:
+        key = _utc_start(point.start)
+        existing = indexed.get(key)
+        if existing is None:
+            indexed[key] = point
+            continue
+        duplicate_count += 1
+        if _PRICE_SOURCE_PRIORITY.get(point.kind, 0) > _PRICE_SOURCE_PRIORITY.get(existing.kind, 0):
+            indexed[key] = point
+    return indexed, duplicate_count
+
+
+def _select_exact_price_window(
+    indexed: dict[datetime, PricePoint],
+    *,
+    start: datetime,
+    slot_count: int,
+) -> tuple[list[PricePoint], list[datetime]]:
+    """Select exact expected timestamps; never shift around missing slots."""
+    selected: list[PricePoint] = []
+    missing: list[datetime] = []
+    for expected_start in _expected_quarter_starts(start, slot_count):
+        point = indexed.get(expected_start)
+        if point is None:
+            missing.append(expected_start)
+        else:
+            selected.append(point)
+    return selected, missing
+
+
 class DummyOSPricesCoordinator:
     """Fetch and normalize prices without controlling anything."""
 
@@ -84,7 +147,20 @@ class DummyOSPricesCoordinator:
         self.listeners: list[callback] = []
         self._unsubs: list[Any] = []
         self.points: list[PricePoint] = []
+        self._normalized_points_by_start: dict[datetime, PricePoint] = {}
+        self._price_buffer_by_start: dict[datetime, PricePoint] = {}
         self._planner_points: list[PricePoint] = []
+        self.price_buffer_start: datetime | None = None
+        self.price_buffer_end: datetime | None = None
+        self.price_buffer_valid_slots = 0
+        self.price_buffer_missing_slots = PRICE_BUFFER_SLOT_COUNT
+        self.price_buffer_duplicate_slots = 0
+        self.price_buffer_missing_starts: list[datetime] = []
+        self.planner_window_start: datetime | None = None
+        self.planner_window_end: datetime | None = None
+        self.planner_price_valid_slots = 0
+        self.planner_price_missing_slots = PLANNER_PRICE_SLOT_COUNT
+        self.planner_price_missing_starts: list[datetime] = []
         self.last_update: datetime | None = None
         self.source_generated_at: str | None = None
         self.forecast_generated_at: str | None = None
@@ -220,8 +296,24 @@ class DummyOSPricesCoordinator:
         self._publish_states()
         self._notify()
 
+    @staticmethod
+    def _floor_local_quarter(value: datetime) -> datetime:
+        local = dt_util.as_local(value)
+        return local.replace(
+            minute=(local.minute // QUARTER_MINUTES) * QUARTER_MINUTES,
+            second=0,
+            microsecond=0,
+        )
+
+    @staticmethod
+    def _next_complete_local_hour(value: datetime) -> datetime:
+        quarter = DummyOSPricesCoordinator._floor_local_quarter(value)
+        if quarter.minute == 0:
+            return quarter
+        return (quarter + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+
     def _build_timeline(self, prices_payload: dict[str, Any], forecast_payload: dict[str, Any]) -> list[PricePoint]:
-        """Build a rolling timeline with known prices always preferred."""
+        """Build public 72h prices plus a timestamp-indexed 76h planner buffer."""
         pt15_raw = prices_payload.get("prices_15m") or []
         self.has_pt15m = prices_payload.get("has_pt15m") is True and bool(pt15_raw)
 
@@ -260,8 +352,6 @@ class DummyOSPricesCoordinator:
                 continue
             for quarter in range(4):
                 q_start = start + timedelta(minutes=quarter * QUARTER_MINUTES)
-                if q_start in known:
-                    continue
                 point = self._compose_point(q_start, predicted, "forecast_hour", 60)
                 point.lower_ex_vat = self._eur_mwh_to_kwh(item.get("lower"))
                 point.upper_ex_vat = self._eur_mwh_to_kwh(item.get("upper"))
@@ -271,19 +361,55 @@ class DummyOSPricesCoordinator:
                 future[q_start] = point
 
         self.forecast_count = len(future)
-        merged = {**future, **known}
-        now_local = dt_util.as_local(dt_util.utcnow())
-        current_quarter = now_local.replace(minute=(now_local.minute // 15) * 15, second=0, microsecond=0)
-        end = current_quarter + timedelta(minutes=FORECAST_SLOTS * QUARTER_MINUTES)
-        self._planner_points = [
-            merged[t]
-            for t in sorted(merged)
-            if dt_util.as_local(t) >= current_quarter
-        ][: FORECAST_SLOTS + 4]
-        timeline = [merged[t] for t in sorted(merged) if current_quarter <= dt_util.as_local(t) < end][:FORECAST_SLOTS]
-        point = self._find_current_point(timeline)
+        indexed, duplicate_count = _deduplicate_price_points(
+            [*future.values(), *known.values()]
+        )
+        self._normalized_points_by_start = indexed
+        self.price_buffer_duplicate_slots = duplicate_count
+
+        current_quarter = self._floor_local_quarter(dt_util.utcnow())
+        buffer_starts = _expected_quarter_starts(current_quarter, PRICE_BUFFER_SLOT_COUNT)
+        buffer_points, missing = _select_exact_price_window(
+            indexed,
+            start=current_quarter,
+            slot_count=PRICE_BUFFER_SLOT_COUNT,
+        )
+        self.price_buffer_start = _utc_start(current_quarter)
+        self.price_buffer_end = self.price_buffer_start + timedelta(hours=PRICE_BUFFER_HOURS)
+        self.price_buffer_valid_slots = len(buffer_points)
+        self.price_buffer_missing_slots = len(missing)
+        self.price_buffer_missing_starts = missing
+        self._price_buffer_by_start = {
+            _utc_start(point.start): point for point in buffer_points
+        }
+
+        public_points, _ = _select_exact_price_window(
+            self._price_buffer_by_start,
+            start=current_quarter,
+            slot_count=FORECAST_SLOTS,
+        )
+        point = self._find_current_point(public_points)
         self.current_source = point.kind if point is not None else "missing"
-        return timeline
+
+        # Keep a precomputed compatibility view. The property below recalculates
+        # the exact 72h planner window on access so a 15-minute clock advance
+        # between price refreshes cannot shift the consumer horizon by list slicing.
+        planner_start = self._next_complete_local_hour(current_quarter)
+        self._planner_points, self.planner_price_missing_starts = _select_exact_price_window(
+            self._price_buffer_by_start,
+            start=planner_start,
+            slot_count=PLANNER_PRICE_SLOT_COUNT,
+        )
+        self.planner_window_start = _utc_start(planner_start)
+        self.planner_window_end = self.planner_window_start + timedelta(hours=PLANNER_HORIZON_HOURS)
+        self.planner_price_valid_slots = len(self._planner_points)
+        self.planner_price_missing_slots = len(self.planner_price_missing_starts)
+
+        # Keep this variable explicit for diagnostics/readability: the 76h
+        # buffer is positional and may contain holes, even though only valid
+        # points are stored in the dict/list views.
+        _ = buffer_starts
+        return public_points
 
     def _compose_point(self, start: datetime, market_ex_vat: float, kind: str, source_resolution: int) -> PricePoint:
         vat_factor = 1.0 + self._num(CONF_VAT_PERCENT, 21.0) / 100.0
@@ -315,8 +441,22 @@ class DummyOSPricesCoordinator:
 
     @property
     def planner_points(self) -> list[PricePoint]:
-        """Return the already-normalized internal buffer for exact planner-hour joins."""
-        return list(self._planner_points)
+        """Return the exact current 72h/288-slot planner price window."""
+        if not self._price_buffer_by_start:
+            return []
+        planner_start = self._next_complete_local_hour(dt_util.utcnow())
+        selected, missing = _select_exact_price_window(
+            self._price_buffer_by_start,
+            start=planner_start,
+            slot_count=PLANNER_PRICE_SLOT_COUNT,
+        )
+        self._planner_points = selected
+        self.planner_price_missing_starts = missing
+        self.planner_window_start = _utc_start(planner_start)
+        self.planner_window_end = self.planner_window_start + timedelta(hours=PLANNER_HORIZON_HOURS)
+        self.planner_price_valid_slots = len(selected)
+        self.planner_price_missing_slots = len(missing)
+        return list(selected)
 
     def _publish_states(self) -> None:
         point = self.current_point
@@ -423,6 +563,22 @@ class DummyOSPricesCoordinator:
             "forecast_slots": self.forecast_count,
             "timeline_slots": len(self.points),
             "resolution_minutes": QUARTER_MINUTES,
+            "price_buffer_hours": PRICE_BUFFER_HOURS,
+            "price_buffer_expected_slots": PRICE_BUFFER_SLOT_COUNT,
+            "price_buffer_valid_slots": self.price_buffer_valid_slots,
+            "price_buffer_missing_slots": self.price_buffer_missing_slots,
+            "price_buffer_duplicate_slots": self.price_buffer_duplicate_slots,
+            "price_buffer_start": self.price_buffer_start.isoformat() if self.price_buffer_start else None,
+            "price_buffer_end": self.price_buffer_end.isoformat() if self.price_buffer_end else None,
+            "price_buffer_first_missing": self.price_buffer_missing_starts[0].isoformat() if self.price_buffer_missing_starts else None,
+            "price_buffer_last_missing": self.price_buffer_missing_starts[-1].isoformat() if self.price_buffer_missing_starts else None,
+            "planner_price_expected_slots": PLANNER_PRICE_SLOT_COUNT,
+            "planner_price_valid_slots": self.planner_price_valid_slots,
+            "planner_price_missing_slots": self.planner_price_missing_slots,
+            "planner_window_start": self.planner_window_start.isoformat() if self.planner_window_start else None,
+            "planner_window_end": self.planner_window_end.isoformat() if self.planner_window_end else None,
+            "planner_price_first_missing": self.planner_price_missing_starts[0].isoformat() if self.planner_price_missing_starts else None,
+            "planner_price_last_missing": self.planner_price_missing_starts[-1].isoformat() if self.planner_price_missing_starts else None,
             "current_price_source": self.current_source,
             "actual_source": "stroomvoorspeller_prices_15m_with_hourly_gap_fallback" if self.has_pt15m else "stroomvoorspeller_prices_hourly_fallback",
             "forecast_source": "stroomvoorspeller_forecast",

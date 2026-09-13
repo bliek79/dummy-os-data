@@ -18,7 +18,9 @@ def test_do_plan_input_sensor_is_registered_and_observer_only():
 def test_public_source_timelines_are_not_extended_for_planner():
     prices = (ROOT / "custom_components/dummy_os_data/prices.py").read_text()
     solar = (ROOT / "custom_components/dummy_os_data/solar.py").read_text()
-    assert '[:FORECAST_SLOTS]' in prices
+    assert 'slot_count=FORECAST_SLOTS' in prices
     assert '[:FORECAST_SLOTS]' in solar
+    assert 'PRICE_BUFFER_HOURS = 76' in prices
+    assert 'PLANNER_PRICE_SLOT_COUNT' in prices
     assert 'def planner_points(self) -> list[PricePoint]:' in prices
     assert 'def planner_points(self) -> list[SolarPoint]:' in solar
