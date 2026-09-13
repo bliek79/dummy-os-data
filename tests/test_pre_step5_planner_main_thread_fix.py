@@ -26,5 +26,5 @@ def test_planner_snapshot_isolation_contract():
     block = sensor.split("def _planner_runtime_snapshot", 1)[1].split("def _build_planner_hours_from_snapshot", 1)[0]
     assert '"records": list(coordinator.records)' in block
     assert '"evaluations": list(coordinator.evaluations)' in block
-    assert '"solar_points": list(coordinator.solar.planner_points)' in block
-    assert '"price_points": list(coordinator.prices.planner_points)' in block
+    assert '"solar_points": list(coordinator.solar.planner_points_for_window(contract))' in block
+    assert '"price_points": list(coordinator.prices.planner_points_for_window(contract, include_neighbours=True))' in block

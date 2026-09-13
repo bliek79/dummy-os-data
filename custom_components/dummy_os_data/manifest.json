@@ -7,5 +7,5 @@
   "integration_type": "service",
   "iot_class": "cloud_polling",
   "requirements": [],
-  "version": "0.2.0-alpha.34"
+  "version": "0.2.0-alpha.35"
 }

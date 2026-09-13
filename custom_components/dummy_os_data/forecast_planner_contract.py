@@ -166,4 +166,10 @@ def build_forecast_planner_contract(
     }
     for field in _READINESS_FIELDS:
         result[field] = model_health.get(field)
+    if planner_hours.get("time_contract") is not None:
+        from custom_components.dummy_os_data.planner_time_contract import time_fields
+        result.update(time_fields(planner_hours["time_contract"]))
+        result["planner_resolution_minutes"] = 15
+        result["transport_resolution_minutes"] = 60
+        result["hour_grouping"] = "window_relative_transport_not_apex"
     return result

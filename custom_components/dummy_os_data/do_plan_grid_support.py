@@ -122,7 +122,7 @@ def _handoff(reserve_result:dict[str,Any]|None, energy_need_result:dict[str,Any]
     return (_finite(need.get('additional_grid_charge_kwh'),non_negative=True),_finite(need.get('soc_percent'),non_negative=True),_utc(need.get('first_usable_solar')),'energy_need_fallback',blockers)
 
 
-def build_do_plan_grid_support(*,input_result:dict[str,Any],energy_need_result:dict[str,Any]|None=None,reserve_result:dict[str,Any]|None=None,trigger_kwh:float=DEFAULT_GRID_CHARGE_TRIGGER_KWH)->dict[str,Any]:
+def _legacy_build_do_plan_grid_support(*,input_result:dict[str,Any],energy_need_result:dict[str,Any]|None=None,reserve_result:dict[str,Any]|None=None,trigger_kwh:float=DEFAULT_GRID_CHARGE_TRIGGER_KWH)->dict[str,Any]:
     trigger=_finite(trigger_kwh,non_negative=True); base=_base(input_result,trigger if trigger is not None else DEFAULT_GRID_CHARGE_TRIGGER_KWH); blockers=[]
     if trigger is None: blockers.append('grid_charge_trigger_invalid')
     if input_result.get('status') not in {'ready','runtime_blocked','degraded','partial'}: blockers.append('planner_input_not_structurally_available')
@@ -194,3 +194,14 @@ def build_do_plan_grid_support(*,input_result:dict[str,Any],energy_need_result:d
     else:
         status=result_status; reason='grid_support_charge_window_sufficient'; output_blockers=[]
     return {**common,'status':status,'valid':fully,'reason':reason,'trigger_reason':'meaningful_shortfall','blockers':output_blockers,'grid_charge_deadline':deadline.isoformat(),'eligible_charge_slot_count':len(eligible),'selected_charge_slots':selected,'selected_charge_slot_count':len(selected),'selected_charge_input_kwh_total':round(actual_input,3),'selected_charge_stored_kwh_total':round(actual_stored,3),'weighted_average_import_price':round(weighted,6) if weighted is not None else None,'effective_stored_cost_per_kwh':round(effective_cost,6) if effective_cost is not None else None,'candidate_charge_cost_eur':round(charge_cost,4),'baseline_grid_support_cost_eur':round(baseline['net_grid_cost_eur'],4),'candidate_72h_net_cost_eur':round(candidate['net_grid_cost_eur'],4),'economic_delta_eur':round(candidate['net_grid_cost_eur']-baseline['net_grid_cost_eur'],4),'solar_displacement_kwh':round(solar_displacement,3),'safety_charge_fully_allocated':fully,'unallocated_chargeable_deficit_battery_kwh':round(unallocated,3),'baseline_end_soc_percent':baseline['end_soc_percent'],'candidate_end_soc_percent':candidate['end_soc_percent'],'source_resolution_minutes_seen':sorted({slot['source_resolution_minutes'] for slot in selected if slot['source_resolution_minutes'] is not None}),'candidate_resimulation_performed':True}
+
+
+def build_do_plan_grid_support(**kwargs: Any) -> dict[str, Any]:
+    from custom_components.dummy_os_data.planner_time_contract import propagate_time, window_errors
+    sources = [kwargs["input_result"]]
+    for key in ("energy_need_result", "reserve_result"):
+        if kwargs.get(key) is not None:
+            sources.append(kwargs[key])
+    errors = window_errors(*sources)
+    result = {"status": "blocked", "valid": False, "blockers": errors, "selected_charge_slots": []} if errors else _legacy_build_do_plan_grid_support(**kwargs)
+    return propagate_time(result, *sources)

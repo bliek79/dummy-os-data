@@ -1,0 +1,67 @@
+{%- set p = 'sensor.dummy_os_energy_do_plan_72h' -%}
+{%- set i = 'sensor.dummy_os_energy_do_plan_input_72h' -%}
+{%- set tc = state_attr(p, 'time_contract') or {} -%}
+{%- set bridge = state_attr(p, 'soc_bridge') or {} -%}
+{%- set hours = state_attr(p, 'hours') or [] -%}
+{%- set slots = state_attr(p, 'slots') or [] -%}
+==================================================
+ALPHA 35 - GEZAMENLIJK TIJDCONTRACT
+==================================================
+Nu lokaal: {{ now().isoformat() }}
+Berekenmoment UTC: {{ tc.get('reference_utc') }}
+Window start UTC: {{ tc.get('window_start') }}
+Window einde UTC (exclusief): {{ tc.get('window_end') }}
+Contractversie: {{ tc.get('version') }}
+Resolutie: {{ tc.get('resolution_minutes') }} min
+Input: {{ states(i) }} | Plan72: {{ states(p) }}
+Plan geldig: {{ state_attr(p, 'valid') }}
+Actueel window: {{ state_attr(p, 'time_alignment_current') }}
+Blockers: {{ state_attr(p, 'blockers') }}
+
+=== DEZELFDE PERIODE ===
+{% for suffix in ['input_72h', 'energy_need', 'reserve_soc', 'grid_support', 'preview', '72h'] %}
+{% set id = 'sensor.dummy_os_energy_do_plan_' ~ suffix %}
+{{ suffix }}: {{ states(id) }} | window gelijk: {{ state_attr(id, 'window_id') == tc.get('window_id') and tc.get('window_id') is not none }}
+{% endfor %}
+Input verwachte kwartieren: {{ state_attr(i, 'native_expected_slot_count') }}
+Input geldige kwartieren: {{ state_attr(i, 'native_valid_slot_count') }}
+Input geldige transportgroepen: {{ state_attr(i, 'fully_valid_hours') }}
+Plan kwartieren: {{ slots | count }}
+Apex klokuurvakken: {{ hours | count }}
+Apex resolutie: {{ state_attr(p, 'dashboard_resolution_minutes') }} min
+Apex contract: {{ state_attr(p, 'apex_contract') }}
+Bronaudit: {{ state_attr(i, 'source_time_audit') }}
+
+=== SOC-OVERBRUGGING (SCHATTING) ===
+Geldig: {{ bridge.get('valid') }}
+Methode: {{ bridge.get('method') }}
+SOC waargenomen bij snapshot: {{ bridge.get('measured_soc_percent') }} %
+Oorspronkelijke SOC-bron bijgewerkt: {{ bridge.get('soc_source_last_updated') }}
+Projectie tot UTC: {{ bridge.get('projected_at') }}
+Overbrugging: {{ bridge.get('duration_seconds') }} seconden
+Laadvermogen: {{ bridge.get('charge_power_w') }} W
+Ontlaadvermogen: {{ bridge.get('discharge_power_w') }} W
+Geschatte SOC bij plannerstart: {{ bridge.get('planner_start_soc_percent') }} %
+Geschatte energieverandering: {{ bridge.get('stored_energy_delta_kwh') }} kWh
+Brug blockers: {{ bridge.get('blockers') }}
+
+=== SAFETY ===
+Reservebreuken: {{ state_attr(p, 'reserve_breach_slots') }}
+Execution-breuken: {{ state_attr(p, 'execution_buffer_breach_slots') }}
+Minimum headroom: {{ state_attr(p, 'minimum_execution_headroom_soc_percent') }} procentpunt
+Reserve min/max: {{ state_attr(p, 'dynamic_reserve_min_soc_percent') }} / {{ state_attr(p, 'dynamic_reserve_max_soc_percent') }} %
+Fysieke bevoegdheid: {{ state_attr(p, 'physical_execution_authority') }}
+
+=== EERSTE 12 KLOKUURVAKKEN (UTC) ===
+{% for h in hours[:12] %}
+{{ loop.index }} | {{ h.get('start') }} -> {{ h.get('end') }}
+  Dekking: {{ h.get('coverage_minutes') }} min | gedeeltelijk: {{ h.get('partial_hour') }} | kwartieren: {{ h.get('slot_count') }}
+  Woning/zon: {{ h.get('home_kwh') }} / {{ h.get('solar_kwh') }} kWh
+  SOC begin/eind: {{ h.get('start_soc_percent') }} / {{ h.get('end_soc_percent') }} %
+  Reserve eind: {{ h.get('dynamic_reserve_end_soc_percent') }} %
+  Veiligheids-/handelsladen: {{ h.get('grid_to_battery_safety_kwh') }} / {{ h.get('grid_to_battery_trade_kwh') }} kWh
+{% endfor %}
+{% if hours %}
+Laatste uurvak: {{ hours[-1].get('start') }} -> {{ hours[-1].get('end') }}
+Laatste dekking: {{ hours[-1].get('coverage_minutes') }} min
+{% endif %}

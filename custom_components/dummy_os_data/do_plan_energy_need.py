@@ -39,7 +39,7 @@ def _aware(value: Any) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-def build_do_plan_energy_need(
+def _legacy_build_do_plan_energy_need(
     *,
     input_result: dict[str, Any],
     soc_percent: float | None,
@@ -93,6 +93,10 @@ def build_do_plan_energy_need(
 
     assert capacity is not None and min_soc is not None and reserve_percent is not None and soc is not None
     assert isinstance(rows, list)
+    if input_result.get("time_contract") is not None:
+        from custom_components.dummy_os_data.planner_native_need import build_native_energy_need
+        return build_native_energy_need(input_result=input_result, base=base, soc=soc, capacity=capacity,
+                                        min_soc=min_soc, reserve_percent=reserve_percent)
     reference = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     current_hour = reference.replace(minute=0, second=0, microsecond=0)
 
@@ -163,3 +167,8 @@ def build_do_plan_energy_need(
     tradable_battery_kwh = max(available_battery_kwh - required_including_reserve, 0.0)
     reason = "additional_energy_required_for_need_plus_reserve" if additional_grid_charge_kwh > ENERGY_EPSILON_KWH else "battery_covers_need_plus_reserve"
     return {**base, "status": "ready", "valid": True, "reason": reason, "blockers": [], "soc_percent": round(soc, 3), "energy_need_until_solar_kwh": round(net_need_kwh, 3), "first_usable_solar": normalized[usable_index]["start"].isoformat(), "available_battery_kwh": round(available_battery_kwh, 3), "safety_reserve_kwh": round(reserve_kwh, 3), "required_including_reserve_kwh": round(required_including_reserve, 3), "additional_grid_charge_kwh": round(additional_grid_charge_kwh, 3), "tradable_battery_kwh": round(tradable_battery_kwh, 3), "contributing_hours": round(contributing_hours, 3), "required_horizon_hours": required_horizon_hours, "horizon_sufficient": True}
+
+
+def build_do_plan_energy_need(**kwargs: Any) -> dict[str, Any]:
+    from custom_components.dummy_os_data.planner_time_contract import propagate_time
+    return propagate_time(_legacy_build_do_plan_energy_need(**kwargs), kwargs["input_result"])

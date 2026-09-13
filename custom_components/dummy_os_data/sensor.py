@@ -36,6 +36,9 @@ from .evaluation import (
 from .time_windows import calculate_time_windows
 from .recency_weighting import calculate_recency_weighting
 from .forecast import HomeBaselineForecast
+from .planner_time_contract import build_time_contract, utc
+from .planner_time_views import forecast_transport
+from .planner_time_runtime import read_soc_bridge, subscribe_bridge_recovery
 from .horizon_quality import calculate_horizon_quality
 from .model_health import calculate_model_health_readiness
 from .forecast_planner_contract import build_forecast_planner_contract
@@ -163,11 +166,13 @@ class DummyOSBaseSensor(SensorEntity):
         return self.coordinator.profile in PROFILE_LEARNING_OPTIONS
 
     def _forecast(self):
-        local = dt_util.as_local(dt_util.utcnow())
-        quarter_key = (local.date().isoformat(), local.hour, local.minute // QUARTER_MINUTES)
-        key = (self.coordinator.profile, len(self.coordinator.records), quarter_key)
+        reference = dt_util.utcnow()
+        contract = build_time_contract(reference)
+        key = (self.coordinator.profile, len(self.coordinator.records), contract["window_id"])
         if key != self._forecast_cache_key:
-            self._forecast_cache = HomeBaselineForecast(self.coordinator.records).build(self.coordinator.profile)
+            self._forecast_cache = HomeBaselineForecast(self.coordinator.records).build(
+                self.coordinator.profile, now=reference, window_start=utc(contract["window_start"])
+            )
             self._forecast_cache_key = key
         return self._forecast_cache or []
 
@@ -354,33 +359,34 @@ def _planner_runtime_snapshot(
     now: datetime | None = None,
     soc_percent: float | None = None,
 ) -> dict[str, Any]:
-    """Snapshot all planner/model inputs on the HA main thread."""
+    """Capture time once before selecting all planner sources on the HA thread."""
+    reference = utc(now or dt_util.utcnow())
+    contract = build_time_contract(reference)
     return {
         "records": list(coordinator.records),
         "evaluations": list(coordinator.evaluations),
         "horizon_daily_stats": dict(coordinator.horizon_daily_stats),
         "profile": coordinator.profile,
         "source_available": coordinator.source_available,
-        "solar_points": list(coordinator.solar.planner_points),
-        "price_points": list(coordinator.prices.planner_points),
+        "solar_points": list(coordinator.solar.planner_points_for_window(contract)),
+        "price_points": list(coordinator.prices.planner_points_for_window(contract, include_neighbours=True)),
         "solar_status": coordinator.solar.source_status,
         "prices_status": coordinator.prices.status,
         "prices_freshness": coordinator.prices.freshness,
-        "now": now or dt_util.utcnow(),
+        "now": reference,
         "soc_percent": soc_percent,
+        "time_contract": contract,
     }
 
 
 def _build_planner_hours_from_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     reference = snapshot["now"]
+    contract = snapshot.get("time_contract") or build_time_contract(reference)
     profile = snapshot["profile"]
-    model = HomeBaselineForecast(snapshot["records"])
-    public_slots = model.build(profile, now=reference)
-    if not public_slots:
-        return aggregate_planner_hours([], profile=profile, localize=dt_util.as_local)
-    generated_count = required_generated_slot_count(public_slots[0].start, dt_util.as_local)
-    extended_slots = model.build(profile, now=reference, slot_count=generated_count)
-    result = aggregate_planner_hours(extended_slots, profile=profile, localize=dt_util.as_local)
+    slots = HomeBaselineForecast(snapshot["records"]).build(
+        profile, now=reference, slot_count=FORECAST_SLOTS, window_start=utc(contract["window_start"])
+    )
+    result = forecast_transport(slots, profile=profile, contract=contract)
     if profile not in PROFILE_LEARNING_OPTIONS:
         result["status"] = "profile_unclassified"
     return result
@@ -448,6 +454,11 @@ def _build_energy_need_from_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]
         safety_reserve_percent=7.0,
         now=snapshot["now"],
     )
+    result["soc_bridge"] = snapshot.get("soc_bridge")
+    if snapshot.get("soc_bridge") is not None:
+        result["measured_soc_percent"] = snapshot["soc_bridge"].get("measured_soc_percent")
+        result["planner_start_soc_percent"] = snapshot["soc_bridge"].get("planner_start_soc_percent")
+        result["soc_time_basis"] = "planner_window_start_estimate"
     result["soc_source_entity"] = snapshot.get("soc_source_entity", "sensor.do_plan_soc_contract")
     result["source_layer_status"] = "central_soc_contract_v1"
     return result
@@ -514,6 +525,15 @@ class DummyOSAsyncPlannerResultSensor(DummyOSBaseSensor):
             result = await self.hass.async_add_executor_job(
                 self._calculate_result, snapshot
             )
+            contract = result.get("time_contract")
+            if contract and contract["window_id"] != build_time_contract(dt_util.utcnow())["window_id"]:
+                result = {**result, "status": "stale", "valid": False,
+                          "reason": "planner_window_elapsed", "blockers": ["planner_window_elapsed"],
+                          "time_alignment_current": False}
+                if snapshot.get("time_contract") is not None:
+                    self._refresh_pending = True
+            else:
+                result["time_alignment_current"] = True
             self._cached_result = result
             self.async_write_ha_state()
             if not self._refresh_pending:
@@ -592,7 +612,7 @@ class DummyOSPlanInput72hSensor(DummyOSAsyncPlannerResultSensor):
     _attr_unique_id = "do_plan_input_72h"
     _attr_suggested_object_id = "do_plan_input_72h"
     _attr_icon = "mdi:table-clock"
-    _unrecorded_attributes = frozenset({"rows"})
+    _unrecorded_attributes = frozenset({"rows", "slots", "source_time_audit"})
 
     def __init__(self, coordinator: DummyOSHomeDataCoordinator) -> None:
         super().__init__(coordinator)
@@ -639,9 +659,11 @@ class DummyOSPlanEnergyNeedSensor(DummyOSPlanInput72hSensor):
     def __init__(self, coordinator: DummyOSHomeDataCoordinator) -> None:
         super().__init__(coordinator)
         self._remove_soc_listener = None
+        self._remove_bridge_recovery = None
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+        self._remove_bridge_recovery = subscribe_bridge_recovery(self)
         self._remove_soc_listener = async_track_state_change_event(
             self.coordinator.hass,
             [RAW_SOC_ENTITY],
@@ -649,6 +671,8 @@ class DummyOSPlanEnergyNeedSensor(DummyOSPlanInput72hSensor):
         )
 
     async def async_will_remove_from_hass(self) -> None:
+        if self._remove_bridge_recovery is not None:
+            self._remove_bridge_recovery()
         if self._remove_soc_listener is not None:
             self._remove_soc_listener()
         await super().async_will_remove_from_hass()
@@ -671,8 +695,13 @@ class DummyOSPlanEnergyNeedSensor(DummyOSPlanInput72hSensor):
         return value if 0.0 <= value <= 100.0 else None
 
     def _snapshot(self) -> dict[str, Any]:
-        contract = self._soc_contract()
-        snapshot = _planner_runtime_snapshot(self.coordinator, soc_percent=self._soc_percent())
+        reference = dt_util.utcnow()
+        contract = get_do_plan_soc_contract_runtime(self.coordinator).result(now=reference)
+        snapshot = _planner_runtime_snapshot(self.coordinator, now=reference, soc_percent=contract.get("soc_percent"))
+        bridge = read_soc_bridge(self.coordinator, snapshot, contract)
+        self._last_soc_bridge_valid = bridge["valid"]
+        snapshot["soc_bridge"] = bridge
+        snapshot["soc_percent"] = bridge.get("planner_start_soc_percent") if bridge["valid"] else None
         snapshot["soc_source_entity"] = "runtime:do_plan_soc_contract_v1"
         snapshot["soc_contract_entity"] = self.SOC_ENTITY
         snapshot["soc_contract_status"] = contract.get("status")

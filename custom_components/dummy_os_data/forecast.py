@@ -11,6 +11,7 @@ from typing import Any
 from homeassistant.util import dt as dt_util
 
 from .const import FORECAST_SLOTS, PROFILE_LEARNING_OPTIONS, QUARTER_MINUTES
+from .planner_time_contract import ceil_quarter, floor_quarter, utc
 
 RECENCY_HALF_LIFE_DAYS = 28.0
 MAX_INTERNAL_FORECAST_SLOTS = FORECAST_SLOTS + 3
@@ -151,6 +152,7 @@ class HomeBaselineForecast:
         now: datetime | None = None,
         *,
         slot_count: int = FORECAST_SLOTS,
+        window_start: datetime | None = None,
     ) -> list[ForecastSlot]:
         """Build native 15-minute forecast slots from historical data.
 
@@ -169,12 +171,9 @@ class HomeBaselineForecast:
 
         exact, day_type, quarter, all_values = self._history(profile)
         now_utc = dt_util.as_utc(now or dt_util.utcnow())
-        now_local = dt_util.as_local(now_utc)
-        minute = (now_local.minute // QUARTER_MINUTES) * QUARTER_MINUTES
-        next_local = now_local.replace(minute=minute, second=0, microsecond=0) + timedelta(
-            minutes=QUARTER_MINUTES
-        )
-        start_utc = dt_util.as_utc(next_local)
+        start_utc = utc(window_start) if window_start is not None else ceil_quarter(now_utc)
+        if start_utc != floor_quarter(start_utc):
+            raise ValueError("forecast window start must be quarter-aligned")
 
         result: list[ForecastSlot] = []
         for offset in range(slot_count):

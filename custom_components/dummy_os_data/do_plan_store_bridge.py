@@ -171,7 +171,7 @@ def _native_plan72_segments(result: dict[str, Any]) -> list[dict[str, Any]]:
     return candidates
 
 
-def build_do_plan_store_bridge(*,plan72_result:dict[str,Any],grid_support_result:dict[str,Any],now:datetime)->dict[str,Any]:
+def _legacy_build_do_plan_store_bridge(*,plan72_result:dict[str,Any],grid_support_result:dict[str,Any],now:datetime)->dict[str,Any]:
     """Build at most three deterministic candidates with safety-first arbitration."""
     now_utc=_utc(now)
     base={"shadow_only":True,"shadow_store_write":True,"operational_plan_store_write":False,"active_use_permitted":False,"physical_execution_authority":False,"scheduler_invoked":False,"safety_chain_invoked":False,"service_calls_performed":False,"max_candidates":MAX_CANDIDATES}
@@ -205,3 +205,8 @@ def build_do_plan_store_bridge(*,plan72_result:dict[str,Any],grid_support_result
     selected.sort(key=lambda item:_utc(item.get("start_time")) or now_utc); overflow=selected[MAX_CANDIDATES:]; selected=selected[:MAX_CANDIDATES]
     for candidate in overflow: suppressed.append({"candidate_id":candidate.get("candidate_id"),"reason":"store_capacity_three","source":candidate.get("source")})
     return {**base,"status":"ready","valid":True,"reason":"shadow_candidates_built","candidate_count":len(selected),"candidates":selected,"suppressed_candidate_count":len(suppressed),"suppressed_candidates":suppressed,"plan72_status":plan72_result.get("status"),"grid_support_status":grid_support_result.get("status"),"candidate_authority":"plan72_native" if native_authority else "legacy_contract","blockers":[]}
+
+
+def build_do_plan_store_bridge(**kwargs: Any) -> dict[str, Any]:
+    from custom_components.dummy_os_data.planner_time_contract import propagate_time
+    return propagate_time(_legacy_build_do_plan_store_bridge(**kwargs), kwargs["plan72_result"])

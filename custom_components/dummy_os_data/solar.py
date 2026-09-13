@@ -149,6 +149,11 @@ class DummyOSSolarCoordinator:
         """Return the already-fetched source buffer for exact planner-hour joins."""
         return list(self._source_points)
 
+    def planner_points_for_window(self, contract: dict[str, Any]) -> list[SolarPoint]:
+        """Select the supplied window from the retained source buffer."""
+        from .planner_time_contract import select_points
+        return select_points(self._source_points, contract)
+
     @property
     def source_point_count(self) -> int:
         """Return raw aligned points retained for rolling-window continuity."""
@@ -567,7 +572,7 @@ class DummyOSSolarCoordinator:
             "tilt": roof.tilt_deg,
             "azimuth": roof.open_meteo_azimuth_deg,
             "models": OPEN_METEO_SOLAR_MODEL,
-            "timezone": OPEN_METEO_SOLAR_TIMEZONE,
+            "timezone": "UTC",
         }
         session = async_get_clientsession(self.hass)
         async with session.get(OPEN_METEO_SOLAR_ENDPOINT, params=params, timeout=20) as response:
@@ -618,7 +623,7 @@ class DummyOSSolarCoordinator:
         if not isinstance(times, list) or not isinstance(values, list):
             raise ValueError("Open-Meteo response missing solar time axis or irradiance")
 
-        timezone = ZoneInfo(OPEN_METEO_SOLAR_TIMEZONE)
+        timezone = ZoneInfo(str(payload.get("timezone") or OPEN_METEO_SOLAR_TIMEZONE))
         result: dict[datetime, float] = {}
         for index, raw_time in enumerate(times):
             if index >= len(values) or not isinstance(raw_time, str):
