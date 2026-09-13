@@ -100,5 +100,9 @@ def test_plan72_treats_100_percent_reserve_as_target_during_grid_support() -> No
     out = PLAN.build_do_plan_72h(input_result=inp, reserve_result=res, preview_result=preview, grid_support_result=grid)
     assert out["simulation_reserve_floor_soc_percent"] == 12.0
     assert out["reserve_target_soc_percent"] == 100.0
-    assert out["safety_charge_source"] == "grid_support_selected_slots"
+    # Alpha34 keeps the pre-solar advice source visible, but only the replayed
+    # native safety plan is authoritative; no max() merge of two schedules.
+    assert out["upstream_safety_source"] == "grid_support_selected_slots"
+    assert out["safety_charge_source"] == "native_sequential_deadline_plan"
+    assert out["safety_plan_authority"] == "plan72_native"
     assert out["hour_count"] == 72

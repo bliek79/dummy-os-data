@@ -15,7 +15,7 @@ def build_do_plan_72h_sensors(coordinator: Any) -> list[Any]:
         _attr_unique_id = "do_plan_72h"
         _attr_suggested_object_id = "do_plan_72h"
         _attr_icon = "mdi:timeline-clock-outline"
-        _unrecorded_attributes = frozenset({"hours", "slots", "baseline", "candidate"})
+        _unrecorded_attributes = frozenset({"hours", "slots", "baseline", "candidate", "safety_plan", "rejected_trade_candidate"})
 
         def _calculate_result(self, snapshot: dict[str, Any]) -> dict[str, Any]:
             input_result = _build_plan_input_from_snapshot(snapshot)

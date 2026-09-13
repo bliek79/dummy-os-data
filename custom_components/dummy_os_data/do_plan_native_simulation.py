@@ -16,6 +16,8 @@ def _simulate(
     trade: dict[str, Any] | None,
     charge_eff: float,
     discharge_eff: float,
+    safety_commitments: list[dict[str, Any]] | None = None,
+    precharge_floors: list[float] | None = None,
 ) -> dict[str, Any]:
     stored = CAPACITY_KWH * start_soc / 100.0
     slot_charge_input_limit = MAX_CHARGE_POWER_W / 1000.0 / SLOTS_PER_HOUR
@@ -29,6 +31,12 @@ def _simulate(
     reserve_breaches = 0
     buffer_breaches = 0
     trade_reserved_kwh = 0.0
+    # A safety purchase for a future deadline must survive intervening home use.
+    # Only energy actually accepted by the battery is protected; no phantom SOC.
+    commitments_by_start: dict[str, list[dict[str, Any]]] = {}
+    for item in safety_commitments or []:
+        commitments_by_start.setdefault(item["start"], []).append(item)
+    held_safety: list[tuple[int, float]] = []
     trade_discharge_index = None
     trade_charge_index = None
     if trade is not None:
@@ -37,9 +45,13 @@ def _simulate(
 
     for index, slot in enumerate(slots):
         start_stored = stored
+        held_safety = [(deadline, energy) for deadline, energy in held_safety if deadline > index]
         reserve_start = reserve_profile[index]
         reserve_end = reserve_profile[index + 1]
         execution_floor_end = reserve_end["execution_floor_kwh"]
+        # Preserve enough existing storage to reach a coming deadline even at
+        # maximum charging power. This is NOT a replacement dynamic reserve.
+        protected_floor = max(execution_floor_end, precharge_floors[index + 1] if precharge_floors else execution_floor_end)
 
         home = slot["home_kwh"]
         solar = slot["solar_kwh"]
@@ -55,11 +67,21 @@ def _simulate(
 
         safety_input = 0.0
         wanted_safety_stored = safety_slots.get(slot["start"], 0.0)
-        if wanted_safety_stored > EPS and charge_input_left > EPS:
+        if wanted_safety_stored > 1e-9 and charge_input_left > 1e-9:
             requested = wanted_safety_stored / charge_eff
             safety_input = min(requested, charge_input_left, max(0.0, (CAPACITY_KWH - stored) / charge_eff))
             stored += safety_input * charge_eff
             charge_input_left -= safety_input
+
+        for commitment in commitments_by_start.get(slot["start"], []):
+            deadline = commitment["deadline_index"]
+            if deadline > index and wanted_safety_stored > 0.0:
+                accepted = safety_input * charge_eff * commitment["stored_battery_kwh"] / wanted_safety_stored
+                held_safety.append((deadline, accepted))
+        safety_reserved_kwh = sum(energy for _, energy in held_safety)
+        remaining_safety_headroom = min(
+            charge_input_left * charge_eff, max(0.0, CAPACITY_KWH - stored)
+        )
 
         trade_input = 0.0
         if trade is not None and trade_charge_index == index and charge_input_left > EPS and stored < CAPACITY_KWH - EPS:
@@ -72,7 +94,7 @@ def _simulate(
                 stored += stored_added
                 trade_reserved_kwh += stored_added
 
-        operational_floor = min(CAPACITY_KWH, execution_floor_end + trade_reserved_kwh)
+        operational_floor = min(CAPACITY_KWH, protected_floor + safety_reserved_kwh + trade_reserved_kwh)
         available_stored_above_floor = max(0.0, stored - operational_floor)
         max_output_from_storage = available_stored_above_floor * discharge_eff
 
@@ -86,7 +108,7 @@ def _simulate(
         battery_to_home = 0.0
         if allow_home_discharge:
             battery_to_home = min(remaining_home, slot_discharge_output_limit, max_output_from_storage)
-            if battery_to_home > EPS:
+            if battery_to_home > 0.0:
                 stored_used = battery_to_home / discharge_eff
                 stored -= stored_used
                 remaining_home -= battery_to_home
@@ -97,19 +119,19 @@ def _simulate(
         battery_to_grid = 0.0
         remaining_output_limit = max(0.0, slot_discharge_output_limit - battery_to_home)
         if trade is not None and trade_discharge_index == index and remaining_output_limit > EPS:
-            available_export = max(0.0, stored - execution_floor_end) * discharge_eff
+            available_export = max(0.0, stored - protected_floor - safety_reserved_kwh) * discharge_eff
             battery_to_grid = min(remaining_output_limit, available_export)
-            if battery_to_grid > EPS:
+            if battery_to_grid > 0.0:
                 stored_used = battery_to_grid / discharge_eff
                 stored -= stored_used
                 trade_reserved_kwh = max(0.0, trade_reserved_kwh - stored_used)
 
-        stored = min(CAPACITY_KWH, max(CAPACITY_KWH * MIN_SOC_PERCENT / 100.0, stored))
+        stored = min(CAPACITY_KWH, max(0.0, stored))
         end_soc = stored / CAPACITY_KWH * 100.0
         execution_headroom = end_soc - reserve_end["execution_floor_kwh"] / CAPACITY_KWH * 100.0
-        if stored + EPS < reserve_end["dynamic_floor_kwh"]:
+        if stored + 1e-6 < reserve_end["dynamic_floor_kwh"]:
             reserve_breaches += 1
-        if stored + EPS < reserve_end["execution_floor_kwh"]:
+        if stored + 1e-6 < reserve_end["execution_floor_kwh"]:
             buffer_breaches += 1
 
         action_parts: list[str] = []
@@ -119,9 +141,9 @@ def _simulate(
             action_parts.append("trade_charge")
         if solar_input > EPS:
             action_parts.append("solar_charge")
-        if battery_to_home > EPS:
+        if battery_to_home > 0.0:
             action_parts.append("home_discharge")
-        if battery_to_grid > EPS:
+        if battery_to_grid > 0.0:
             action_parts.append("trade_discharge")
         if not action_parts:
             action_parts.append("baseline")
@@ -167,6 +189,12 @@ def _simulate(
                 "solar_horizon_complete": reserve_start["solar_horizon_complete"],
                 "execution_headroom_soc_percent": round(execution_headroom, 3),
                 "trade_reserved_kwh": round(trade_reserved_kwh, 3),
+                "safety_reserved_kwh": round(safety_reserved_kwh, 6),
+                "precharge_protection_soc_percent": round(protected_floor / CAPACITY_KWH * 100.0, 3),
+                "end_stored_kwh": stored,
+                "accepted_safety_stored_kwh": safety_input * charge_eff,
+                "remaining_safety_charge_stored_kwh": remaining_safety_headroom,
+                "requested_safety_stored_kwh": round(wanted_safety_stored, 6),
                 "action": "+".join(action_parts),
                 "action_parts": action_parts,
                 **{key: round(value, 6) for key, value in values.items()},

@@ -246,63 +246,12 @@ def _dynamic_reserve_profile(slots: list[dict[str, Any]], discharge_eff: float) 
 
 
 def _dynamic_safety_schedule(slots: list[dict[str, Any]], reserve_profile: list[dict[str, Any]], start_soc: float, charge_eff: float) -> dict[str, float]:
-    """Old-EMS alpha27 safety precharge translated to native quarter deadlines."""
-    planned: dict[str, float] = {}
-    if not slots:
-        return planned
-
-    base_floor = CAPACITY_KWH * (MIN_SOC_PERCENT + SAFETY_RESERVE_PERCENT) / 100.0
-    requirements: list[tuple[int, float, str | None]] = []
-    for idx in range(len(slots)):
-        end_req = reserve_profile[idx + 1]
-        requirements.append((idx, end_req["execution_floor_kwh"], end_req["next_usable_solar"]))
-
-    peaks: list[tuple[int, float]] = []
-    for idx, floor_kwh, next_solar in requirements:
-        if next_solar is None:
-            continue
-        prev_floor = requirements[idx - 1][1] if idx > 0 else base_floor
-        next_floor = requirements[idx + 1][1] if idx + 1 < len(requirements) else base_floor
-        if floor_kwh > prev_floor + EPS and floor_kwh >= next_floor - EPS:
-            peaks.append((idx, floor_kwh))
-
-    slot_input_limit = MAX_CHARGE_POWER_W / 1000.0 / SLOTS_PER_HOUR
-    for deadline_idx, required_floor in peaks:
-        estimated = CAPACITY_KWH * start_soc / 100.0
-        for sim_idx in range(deadline_idx + 1):
-            slot = slots[sim_idx]
-            solar_surplus = max(0.0, slot["solar_kwh"] - slot["home_kwh"])
-            solar_input = min(solar_surplus, slot_input_limit)
-            estimated = min(CAPACITY_KWH, estimated + solar_input * charge_eff)
-            estimated = min(CAPACITY_KWH, estimated + planned.get(slot["start"], 0.0))
-        deficit_stored = max(0.0, required_floor - estimated)
-        if deficit_stored <= EPS:
-            continue
-
-        candidates: list[tuple[float, datetime, int, float]] = []
-        for cand_idx in range(deadline_idx + 1):
-            slot = slots[cand_idx]
-            price = slot["import_price"]
-            start = _utc(slot["start"])
-            assert start is not None
-            solar_surplus = max(0.0, slot["solar_kwh"] - slot["home_kwh"])
-            charge_headroom_input = max(
-                0.0,
-                slot_input_limit - min(slot_input_limit, solar_surplus),
-            )
-            existing_stored = planned.get(slot["start"], 0.0)
-            max_stored = max(0.0, charge_headroom_input * charge_eff - existing_stored)
-            if max_stored > EPS:
-                candidates.append((price, start, cand_idx, max_stored))
-        candidates.sort(key=lambda item: (item[0], item[1]))
-        for _price, _start, cand_idx, max_stored in candidates:
-            if deficit_stored <= EPS:
-                break
-            key = slots[cand_idx]["start"]
-            add = min(deficit_stored, max_stored)
-            planned[key] = planned.get(key, 0.0) + add
-            deficit_stored -= add
-    return planned
+    """Compatibility entrypoint; production uses schedule AND carry commitments."""
+    from .do_plan_native_safety import build_native_safety_plan
+    return build_native_safety_plan(
+        slots=slots, reserve_profile=reserve_profile, start_soc=start_soc,
+        charge_eff=charge_eff, discharge_eff=DISCHARGE_EFFICIENCY_PERCENT / 100.0,
+    )["schedule"]
 
 
 def _external_safety_schedule(slots: list[dict[str, Any]], preview_result: dict[str, Any], grid_support_result: dict[str, Any] | None) -> tuple[dict[str, float], str]:

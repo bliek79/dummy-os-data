@@ -51,6 +51,7 @@ def _base(input_result:dict[str,Any],trigger:float)->dict[str,Any]:
         'shadow_only':True,'active_use_permitted':False,'physical_execution_authority':False,
         'plan_store_write':False,'scheduler_invoked':False,'safety_chain_invoked':False,'service_calls_performed':False,
         'missing_as_zero_used':False,'prices_fallback_used':bool(input_result.get('interpolated_price_slots',0)),'price_direction':'import_only','safety_priority_over_trade':True,
+        'planning_role':'pre_solar_advice','authoritative_safety_plan':False,
     }
 
 
@@ -161,14 +162,14 @@ def build_do_plan_grid_support(*,input_result:dict[str,Any],energy_need_result:d
     plan:dict[str,float]={}
     previous_actual=0.0
     for slot in eligible:
-        if previous_actual*ce+EPS>=raw: break
+        if previous_actual*ce+1e-6>=raw: break
         solar_surplus=max(slot['solar_kwh']-slot['home_kwh'],0.0)
-        request=max(0.0,max_slot_input-solar_surplus)
-        if request<=EPS: continue
+        request=min(max(0.0,max_slot_input-solar_surplus), max(0.0,required_input-previous_actual))
+        if request<=1e-9: continue
         plan[slot['start']]=request
         candidate=_simulate(slots,start_soc=soc,charge_plan=plan)
         actual=candidate['grid_to_battery_input_kwh']
-        if actual<=previous_actual+EPS:
+        if actual<=previous_actual+1e-9:
             plan.pop(slot['start'],None); continue
         previous_actual=actual
 

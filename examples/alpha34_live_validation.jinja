@@ -1,0 +1,63 @@
+{%- set id = 'sensor.dummy_os_energy_do_plan_72h' -%}
+{%- set safety = state_attr(id, 'safety_plan') or {} -%}
+{%- set baseline = state_attr(id, 'baseline') or {} -%}
+{%- set candidate = state_attr(id, 'candidate') or {} -%}
+{%- set hours = state_attr(id, 'hours') or [] -%}
+{%- set slots = state_attr(id, 'slots') or [] -%}
+ALPHA 34 LIVE VALIDATIE
+Moment: {{ now().isoformat() }}
+
+=== INVOER ===
+Input72h: {{ states('sensor.dummy_os_energy_do_plan_input_72h') }}
+Geldige uren: {{ state_attr('sensor.dummy_os_energy_do_plan_input_72h', 'fully_valid_hours') }}
+Effectieve horizon: {{ state_attr(id, 'effective_horizon_hours') }} uur
+Input blockers: {{ state_attr('sensor.dummy_os_energy_do_plan_input_72h', 'blockers') }}
+
+=== PLAN72 ===
+Status: {{ states(id) }} | geldig: {{ state_attr(id, 'valid') }}
+Reden: {{ state_attr(id, 'reason') }}
+Blockers: {{ state_attr(id, 'blockers') }}
+Rekenresolutie: {{ state_attr(id, 'planner_resolution_minutes') }} min
+Apex-resolutie: {{ state_attr(id, 'dashboard_resolution_minutes') }} min
+Werkelijke arrays: {{ slots | count }} kwartieren / {{ hours | count }} uren
+Quarter source: {{ state_attr(id, 'quarter_source') }}
+Reserve min/max: {{ state_attr(id, 'dynamic_reserve_min_soc_percent') }} / {{ state_attr(id, 'dynamic_reserve_max_soc_percent') }} %
+Execution headroom minimum: {{ state_attr(id, 'minimum_execution_headroom_soc_percent') }} procentpunt
+Reservebreuken: {{ state_attr(id, 'reserve_breach_slots') }}
+Execution-breuken: {{ state_attr(id, 'execution_buffer_breach_slots') }}
+Eerste execution-breuk: {{ state_attr(id, 'first_execution_breach') }}
+
+=== LEIDEND SAFETY-PLAN ===
+Autoriteit: {{ state_attr(id, 'safety_plan_authority') }}
+Bron: {{ state_attr(id, 'safety_charge_source') }}
+Upstream alleen advies: {{ state_attr(id, 'upstream_safety_advice_only') }}
+Safety geldig: {{ safety.get('valid') }}
+Geaccepteerde laadkwartieren: {{ safety.get('selected_charge_slot_count') }}
+Gevraagde opslag: {{ safety.get('requested_stored_kwh') }} kWh
+Geaccepteerde opslag: {{ safety.get('accepted_stored_kwh') }} kWh
+Geaccepteerde netinput: {{ safety.get('accepted_grid_input_kwh') }} kWh
+Ongehaalde deadlines: {{ (safety.get('unmet_deadlines') or []) | count }}
+Replays: {{ safety.get('replay_count') }}
+Baseline execution-breuken: {{ baseline.get('execution_buffer_breach_slots') }}
+Gepubliceerd execution-breuken: {{ candidate.get('execution_buffer_breach_slots') }}
+Handelskandidaat afgewezen voor safety: {{ state_attr(id, 'trade_rejected_for_safety') }}
+Shadow only: {{ state_attr(id, 'shadow_only') }}
+Fysieke bevoegdheid: {{ state_attr(id, 'physical_execution_authority') }}
+
+=== EERSTE 8 GEACCEPTEERDE LAADKWARTIEREN (UTC) ===
+{% for s in (safety.get('selected_charge_slots') or [])[:8] -%}
+{{ s.get('start') }} -> {{ s.get('end') }} | net={{ s.get('allocated_charge_input_kwh') }} | opslag={{ s.get('stored_battery_kwh') }} kWh | prijs={{ s.get('import_price_all_in') }} EUR/kWh | SOC={{ s.get('projected_soc_after_percent') }} %
+{% else -%}
+Geen geaccepteerde laadkwartieren gepubliceerd.
+{% endfor %}
+=== EERSTE 12 UREN VOOR APEX (UTC) ===
+{% for h in hours[:12] -%}
+Uur {{ loop.index }}: {{ h.get('start') }} -> {{ h.get('end') }}
+  Home/solar: {{ h.get('home_kwh') }} / {{ h.get('solar_kwh') }} kWh
+  SOC: {{ h.get('start_soc_percent') }} -> {{ h.get('end_soc_percent') }} %
+  Reserve: {{ h.get('dynamic_reserve_start_soc_percent') }} -> {{ h.get('dynamic_reserve_end_soc_percent') }} % | execution eind={{ h.get('execution_reserve_end_soc_percent') }} %
+  Safety/trade netinput: {{ h.get('grid_to_battery_safety_kwh') }} / {{ h.get('grid_to_battery_trade_kwh') }} kWh
+  Naar woning/net: {{ h.get('battery_to_home_kwh') }} / {{ h.get('battery_to_grid_kwh') }} kWh | headroom={{ h.get('execution_headroom_soc_percent') }} procentpunt
+{% else -%}
+Geen uurregels gepubliceerd.
+{% endfor %}

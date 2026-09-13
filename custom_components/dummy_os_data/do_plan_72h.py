@@ -6,9 +6,10 @@ from custom_components.dummy_os_data.do_plan_native_common import (
     DISCHARGE_EFFICIENCY_PERCENT, EXECUTION_BUFFER_PERCENT, MIN_SOC_PERCENT,
     SAFETY_RESERVE_PERCENT, USABLE_SOLAR_CONSECUTIVE_SLOTS, EPS, _finite,
     _blocked, _expand_native_slots, _dynamic_reserve_profile,
-    _dynamic_safety_schedule, _external_safety_schedule, _select_native_trade,
+    _select_native_trade,
 )
 from custom_components.dummy_os_data.do_plan_native_simulation import _simulate, _aggregate_hours
+from custom_components.dummy_os_data.do_plan_native_safety import build_native_safety_plan, summarize_native_safety_plan, TOL_KWH
 
 
 def _preview_trade_fallback(slots: list[dict[str, Any]], preview_result: dict[str, Any], charge_eff: float, discharge_eff: float) -> dict[str, Any] | None:
@@ -118,22 +119,36 @@ def build_do_plan_72h(*, input_result: dict[str, Any], reserve_result: dict[str,
     charge_eff = CHARGE_EFFICIENCY_PERCENT / 100.0
     discharge_eff = DISCHARGE_EFFICIENCY_PERCENT / 100.0
     reserve_profile = _dynamic_reserve_profile(slots, discharge_eff)
-    dynamic_safety = _dynamic_safety_schedule(slots, reserve_profile, soc, charge_eff)
-    external_safety, external_safety_source = _external_safety_schedule(slots, preview_result, grid_support_result)
-    safety_slots = {key: max(dynamic_safety.get(key, 0.0), external_safety.get(key, 0.0)) for key in set(dynamic_safety) | set(external_safety)}
+    safety = build_native_safety_plan(
+        slots=slots, reserve_profile=reserve_profile, start_soc=soc,
+        charge_eff=charge_eff, discharge_eff=discharge_eff,
+    )
+    safety_slots = safety["schedule"]
+    external_safety_source = "grid_support_selected_slots" if grid_support_result is not None else "preview_hour_advice"
     trade = _select_native_trade(slots, preview_result, charge_eff, discharge_eff)
     if trade is None:
         trade = _preview_trade_fallback(slots, preview_result, charge_eff, discharge_eff)
 
-    baseline = _simulate(slots=slots, start_soc=soc, reserve_profile=reserve_profile, safety_slots=safety_slots, trade=None, charge_eff=charge_eff, discharge_eff=discharge_eff)
-    candidate = _simulate(slots=slots, start_soc=soc, reserve_profile=reserve_profile, safety_slots=safety_slots, trade=trade, charge_eff=charge_eff, discharge_eff=discharge_eff)
+    baseline = safety["simulation"]
+    candidate = _simulate(slots=slots, start_soc=soc, reserve_profile=reserve_profile,
+                          safety_slots=safety_slots, safety_commitments=safety["commitments"],
+                          precharge_floors=safety["precharge_floors"],
+                          trade=trade, charge_eff=charge_eff, discharge_eff=discharge_eff)
+    def safe(simulation: dict[str, Any]) -> bool:
+        return all(row["end_stored_kwh"] + TOL_KWH >= reserve_profile[i+1]["execution_floor_kwh"]
+                   for i, row in enumerate(simulation["slots"]))
+    trade_rejected = trade is not None and safe(baseline) and not safe(candidate)
+    rejected_candidate = None
+    if trade_rejected:
+        # Do not buy extra safety energy merely to subsidize an unsafe trade.
+        # A valid safety-only plan must survive rejection of a trading candidate.
+        rejected_candidate = {k: v for k, v in candidate.items() if k != "slots"}
+        candidate = baseline
+    published_safety = summarize_native_safety_plan(candidate, reserve_profile, safety["commitments"])
     candidate_hours = _aggregate_hours(candidate["slots"])
     baseline_hours = _aggregate_hours(baseline["slots"])
     solar_displacement = max(0.0, baseline["solar_to_battery_kwh"] - candidate["solar_to_battery_kwh"])
-
-    infeasible = candidate["reserve_breach_slots"] > 0 or candidate["execution_buffer_breach_slots"] > 0
-    if grid_support_result is not None and grid_support_result.get("status") == "infeasible":
-        infeasible = True
+    infeasible = not safe(candidate)
 
     if infeasible:
         status = "infeasible"
@@ -180,10 +195,37 @@ def build_do_plan_72h(*, input_result: dict[str, Any], reserve_result: dict[str,
         "execution_reserve_max_soc_percent": round(max(execution_reserve_values), 3) if execution_reserve_values else None,
         "minimum_execution_headroom_soc_percent": round(min(headroom_values), 3) if headroom_values else None,
         "execution_buffer_percent": EXECUTION_BUFFER_PERCENT,
-        "dynamic_safety_slot_count": sum(1 for value in dynamic_safety.values() if value > EPS),
-        "safety_charge_source": external_safety_source,
-        "dynamic_safety_charge_source": "native_dynamic_reserve",
-        "safety_charge_sources": ["native_dynamic_reserve", external_safety_source],
+        "dynamic_safety_slot_count": len(published_safety["selected_charge_slots"]),
+        "safety_charge_source": "native_sequential_deadline_plan",
+        "dynamic_safety_charge_source": "native_sequential_deadline_plan",
+        "safety_charge_sources": ["native_sequential_deadline_plan"],
+        "safety_plan_authority": "plan72_native",
+        "upstream_safety_source": external_safety_source,
+        "upstream_safety_advice_only": True,
+        "safety_plan": {
+            "source": "native_sequential_deadline_plan",
+            "valid": published_safety["fully_allocated"],
+            "selected_charge_slots": published_safety["selected_charge_slots"],
+            "selected_charge_slot_count": len(published_safety["selected_charge_slots"]),
+            "requested_stored_kwh": safety["requested_stored_kwh"],
+            "accepted_stored_kwh": published_safety["accepted_stored_kwh"],
+            "accepted_grid_input_kwh": published_safety["accepted_grid_input_kwh"],
+            "unmet_deadlines": published_safety["breaches"],
+            "replay_count": safety["replay_count"],
+        },
+        "trade_rejected_for_safety": trade_rejected,
+        "rejected_trade_candidate": rejected_candidate,
+        "reserve_breach_slots": candidate["reserve_breach_slots"],
+        "execution_buffer_breach_slots": candidate["execution_buffer_breach_slots"],
+        "first_execution_breach": next((
+            {"index": i, "start": row["start"], "end": row["end"],
+             "soc_percent": row["end_soc_percent"],
+             "required_soc_percent": row["execution_reserve_end_soc_percent"],
+             "shortfall_battery_kwh": round(reserve_profile[i+1]["execution_floor_kwh"] - row["end_stored_kwh"], 6)}
+            for i, row in enumerate(candidate["slots"])
+            if row["end_stored_kwh"] + TOL_KWH < reserve_profile[i+1]["execution_floor_kwh"]
+        ), None),
+        **{key: value for key, value in candidate.items() if key.endswith("_kwh")},
         "grid_support_status": grid_support_result.get("status") if grid_support_result is not None else None,
         "grid_support_fallback_to_preview": bool(grid_support_result is not None and grid_support_result.get("status") not in {"ready", "degraded", "infeasible"}),
         "missing_as_zero_used": False,
