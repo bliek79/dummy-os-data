@@ -120,12 +120,72 @@ def _grid_support_segments(grid_support_result: dict[str, Any]) -> list[dict[str
     return candidates
 
 
+def _native_plan72_segments(result: dict[str, Any]) -> list[dict[str, Any]]:
+    """Only validated native allocations may reach the shadow store.
+
+    Do not widen a :15 charge to an hour or merge different power requests into
+    an invented constant-power action. Hourly aggregation is for Apex only.
+    """
+    if result.get("status") not in {"ready", "degraded"} or result.get("valid") is not True:
+        return []
+    prepared = []
+    for row in result.get("slots") or []:
+        start = _utc(row.get("start")); end = _utc(row.get("end"))
+        if start is None or end is None or (end-start).total_seconds() != 900:
+            continue
+        charge = _finite(row.get("grid_to_battery_kwh"), non_negative=True) or 0.0
+        discharge = _finite(row.get("battery_to_grid_kwh"), non_negative=True) or 0.0
+        safety = _finite(row.get("grid_to_battery_safety_kwh"), non_negative=True) or 0.0
+        flows = [("charge", "safety_charge" if safety > MIN_ENERGY_KWH else "trade_charge", charge),
+                 ("discharge", "trade_discharge", discharge)]
+        for action, reason, energy in flows:
+            if energy <= MIN_ENERGY_KWH:
+                continue
+            prepared.append({"start": start, "end": end, "energy": energy,
+                             "action": action, "reason": reason,
+                             "power": _round_power_up(energy * 4000.0),
+                             "start_soc": _finite(row.get("start_soc_percent")),
+                             "target": _finite(row.get("end_soc_percent"))})
+    prepared.sort(key=lambda row: (row["start"], row["reason"]))
+    segments = []
+    for row in prepared:
+        previous = segments[-1][-1] if segments else None
+        if (previous and previous["end"] == row["start"]
+                and all(previous[key] == row[key] for key in ("action", "reason", "power"))):
+            segments[-1].append(row)
+        else:
+            segments.append([row])
+    candidates = []
+    for group in segments:
+        candidate = _build_candidate(
+            action=group[0]["action"], reason=group[0]["reason"],
+            starts=[row["start"].isoformat() for row in group],
+            start=group[0]["start"], end=group[-1]["end"],
+            energy_kwh=sum(row["energy"] for row in group),
+            start_soc=group[0]["start_soc"], target_soc=group[-1]["target"],
+            source="do_plan_72h",
+        )
+        if candidate is not None:
+            candidate["source_resolution_minutes"] = 15
+            candidates.append(candidate)
+    return candidates
+
+
 def build_do_plan_store_bridge(*,plan72_result:dict[str,Any],grid_support_result:dict[str,Any],now:datetime)->dict[str,Any]:
     """Build at most three deterministic candidates with safety-first arbitration."""
     now_utc=_utc(now)
     base={"shadow_only":True,"shadow_store_write":True,"operational_plan_store_write":False,"active_use_permitted":False,"physical_execution_authority":False,"scheduler_invoked":False,"safety_chain_invoked":False,"service_calls_performed":False,"max_candidates":MAX_CANDIDATES}
     if now_utc is None: return {**base,"status":"blocked","valid":False,"reason":"now_invalid","candidates":[],"suppressed_candidates":[],"blockers":["now_invalid"]}
-    grid_candidates=_grid_support_segments(grid_support_result); plan_candidates=_plan72_segments(plan72_result); suppressed=[]
+    native_authority = plan72_result.get("safety_plan_authority") == "plan72_native"
+    grid_candidates=_grid_support_segments(grid_support_result); suppressed=[]
+    if native_authority:
+        plan_candidates = _native_plan72_segments(plan72_result)
+        for candidate in grid_candidates:
+            suppressed.append({"candidate_id": candidate["candidate_id"],
+                               "reason": "advisory_only_native_plan_authoritative", "source": candidate["source"]})
+        grid_candidates = []
+    else:
+        plan_candidates = _plan72_segments(plan72_result)
     # Grid Support is the economic replacement for the older hourly safety-charge
     # placement. When it is valid/triggered, carrying both would double-count the
     # same reserve shortage even when their selected times do not overlap.
@@ -144,4 +204,4 @@ def build_do_plan_store_bridge(*,plan72_result:dict[str,Any],grid_support_result
         selected.append(candidate)
     selected.sort(key=lambda item:_utc(item.get("start_time")) or now_utc); overflow=selected[MAX_CANDIDATES:]; selected=selected[:MAX_CANDIDATES]
     for candidate in overflow: suppressed.append({"candidate_id":candidate.get("candidate_id"),"reason":"store_capacity_three","source":candidate.get("source")})
-    return {**base,"status":"ready","valid":True,"reason":"shadow_candidates_built","candidate_count":len(selected),"candidates":selected,"suppressed_candidate_count":len(suppressed),"suppressed_candidates":suppressed,"plan72_status":plan72_result.get("status"),"grid_support_status":grid_support_result.get("status"),"blockers":[]}
+    return {**base,"status":"ready","valid":True,"reason":"shadow_candidates_built","candidate_count":len(selected),"candidates":selected,"suppressed_candidate_count":len(suppressed),"suppressed_candidates":suppressed,"plan72_status":plan72_result.get("status"),"grid_support_status":grid_support_result.get("status"),"candidate_authority":"plan72_native" if native_authority else "legacy_contract","blockers":[]}

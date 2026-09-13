@@ -199,9 +199,10 @@ def test_plan72_publishes_reliable_prefix_instead_of_empty_plan() -> None:
 def test_plan72_exposes_separate_safety_and_trade_charge_values() -> None:
     start = datetime(2026, 9, 13, 12, 0, tzinfo=timezone.utc)
     inp = _plan_input(start)
+    # Actual reserve shortfall, not just an advisory Preview charge request.
     reserve = {
         "status": "ready", "valid": True, "input_rows_signature": "alpha31-sig",
-        "soc_percent": 40.0, "reserve_soc_target_percent": 12.0,
+        "soc_percent": 10.0, "reserve_soc_target_percent": 12.0,
         "grid_support_required": False,
     }
     preview = {
