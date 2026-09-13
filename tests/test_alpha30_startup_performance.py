@@ -1,4 +1,6 @@
 from pathlib import Path
+import json
+import re
 
 
 ROOT = Path(__file__).parents[1]
@@ -39,8 +41,11 @@ def test_background_startup_task_is_cancelled_on_unload() -> None:
     assert "except asyncio.CancelledError" in source
 
 
-def test_alpha30_version_is_consistent() -> None:
+def test_current_version_is_consistent_after_alpha30() -> None:
     const = _read("custom_components/dummy_os_data/const.py")
-    manifest = _read("custom_components/dummy_os_data/manifest.json")
-    assert 'VERSION = "0.2.0-alpha.30"' in const
-    assert '"version": "0.2.0-alpha.30"' in manifest
+    manifest = json.loads(_read("custom_components/dummy_os_data/manifest.json"))
+    match = re.search(r'^VERSION = "([^"]+)"$', const, re.MULTILINE)
+    assert match is not None
+    assert match.group(1) == manifest["version"]
+    assert manifest["version"].startswith("0.2.0-alpha.")
+    assert int(manifest["version"].rsplit(".", 1)[1]) >= 30

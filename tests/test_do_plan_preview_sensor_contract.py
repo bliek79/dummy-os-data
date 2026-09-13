@@ -22,11 +22,12 @@ def test_preview_keeps_observer_only_authority_contract() -> None:
     assert '"active_use_permitted": False' in core
     assert '"physical_execution_authority": False' in core
     assert '"reserve_recalculated": False' in core
-    assert '"prices_fallback_used": False' in core
+    assert '"prices_fallback_used"' in core
     assert '"missing_as_zero_used": False' in core
-    assert '"calculation_scope": "planner_preview_only"' in core
+    assert '"calculation_scope": "planner_preview_reliable_prefix"' in core
     assert '"losses_included": True' in core
     assert '"preview_decision"' in core
+    assert 'trade_rows_excluded_interpolated' in core
 
 
 def test_preview_uses_separate_import_and_export_economics() -> None:

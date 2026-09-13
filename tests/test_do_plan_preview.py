@@ -107,14 +107,15 @@ def test_missing_export_price_blocks_instead_of_falling_back() -> None:
     assert result["missing_as_zero_used"] is False
 
 
-def test_runtime_blocked_input_is_not_used_for_action_preview() -> None:
+def test_runtime_blocked_input_keeps_structural_shadow_preview_available() -> None:
     result = MOD.build_do_plan_preview(
         input_result=_input(status="runtime_blocked"),
         reserve_result=_reserve(),
         now=BASE,
     )
-    assert result["status"] == "blocked"
-    assert "planner_input_not_runtime_ready" in result["blockers"]
+    assert result["status"] == "ready"
+    assert result["valid"] is True
+    assert result["physical_execution_authority"] is False
 
 
 def test_reserve_deficit_always_suppresses_trade_decisions() -> None:

@@ -13,6 +13,7 @@ DEFAULT_MINIMUM_TRADE_MARGIN = 0.10
 DEFAULT_MAX_CHARGE_POWER_W = 3200
 DEFAULT_MAX_DISCHARGE_POWER_W = 3200
 SOLAR_PROTECTION_HOURS = 12
+HOURS = 72
 
 
 def _finite(value: Any, *, non_negative: bool = False) -> float | None:
@@ -88,16 +89,21 @@ def build_do_plan_preview(
     max_charge_power_w: int = DEFAULT_MAX_CHARGE_POWER_W,
     max_discharge_power_w: int = DEFAULT_MAX_DISCHARGE_POWER_W,
 ) -> dict[str, Any]:
-    """Build the Step-4 observer-only safety and financial preview.
+    """Build safety and financial preview over the reliable planner prefix.
 
-    Step 3 remains the sole source of protected reserve position. Step 4 only
-    applies efficiency, price and power constraints to diagnostic candidates;
-    it never recalculates reserve-SOC and never performs physical execution.
+    A trailing source gap degrades the available horizon but no longer destroys
+    an otherwise valid preview. Interpolated price rows may support continuity
+    and safety scheduling, but are excluded from trade-pair discovery.
     """
     now_utc = _utc(now)
     charge_eff = _finite(charge_efficiency_percent, non_negative=True)
     discharge_eff = _finite(discharge_efficiency_percent, non_negative=True)
     min_margin = _finite(minimum_trade_margin, non_negative=True)
+    rows = input_result.get("rows")
+    effective_horizon = input_result.get("effective_horizon_hours")
+    if not isinstance(effective_horizon, int):
+        effective_horizon = HOURS if input_result.get("fully_valid_hours") == HOURS else 0
+    effective_horizon = max(0, min(HOURS, effective_horizon))
 
     base = {
         "input_status": input_result.get("status"),
@@ -108,27 +114,28 @@ def build_do_plan_preview(
         "reserve_soc_target_percent": reserve_result.get("reserve_soc_target_percent"),
         "reserve_deficit_battery_kwh": reserve_result.get("reserve_deficit_kwh"),
         "free_above_reserve_battery_kwh": reserve_result.get("free_above_reserve_kwh"),
+        "effective_horizon_hours": effective_horizon,
+        "valid_through": input_result.get("valid_through"),
         "shadow_only": True,
         "active_use_permitted": False,
         "physical_execution_authority": False,
-        "calculation_scope": "planner_preview_only",
+        "calculation_scope": "planner_preview_reliable_prefix",
         "losses_included": True,
         "reserve_source": "do_plan_reserve_soc",
         "reserve_recalculated": False,
-        "prices_fallback_used": False,
+        "prices_fallback_used": bool(input_result.get("interpolated_price_slots", 0)),
         "missing_as_zero_used": False,
     }
 
     blockers: list[str] = []
     if now_utc is None:
         blockers.append("now_invalid")
-    if input_result.get("status") != "ready":
-        blockers.append("planner_input_not_runtime_ready")
-    if input_result.get("fully_valid_hours") != 72:
-        blockers.append("planner_input_not_fully_valid")
-    rows = input_result.get("rows")
-    if not isinstance(rows, list) or len(rows) != 72:
+    if input_result.get("status") not in {"ready", "runtime_blocked", "degraded", "partial"}:
+        blockers.append("planner_input_not_available")
+    if not isinstance(rows, list) or len(rows) != HOURS:
         blockers.append("planner_rows_not_exactly_72")
+    if effective_horizon <= 0:
+        blockers.append("planner_effective_horizon_empty")
     if reserve_result.get("status") != "ready" or reserve_result.get("valid") is not True:
         blockers.append("reserve_soc_not_ready")
 
@@ -164,9 +171,9 @@ def build_do_plan_preview(
 
     parsed_rows: list[dict[str, Any]] = []
     if isinstance(rows, list):
-        for index, raw in enumerate(rows):
+        for index, raw in enumerate(rows[:effective_horizon]):
             if not isinstance(raw, dict) or raw.get("fully_valid") is not True:
-                blockers.append(f"row_{index}_not_fully_valid")
+                blockers.append(f"row_{index}_not_fully_valid_inside_effective_horizon")
                 continue
             start = _utc(raw.get("start"))
             end = _utc(raw.get("end"))
@@ -177,6 +184,11 @@ def build_do_plan_preview(
             if None in (start, end, home, solar, import_price, export_price):
                 blockers.append(f"row_{index}_invalid")
                 continue
+            quarters = raw.get("price_quarters")
+            price_interpolated = bool(raw.get("price_interpolated")) or (
+                isinstance(quarters, list)
+                and any(str(item.get("kind") or "").lower() == "interpolated" for item in quarters if isinstance(item, dict))
+            )
             parsed_rows.append(
                 {
                     "index": index,
@@ -186,6 +198,7 @@ def build_do_plan_preview(
                     "solar_kwh": solar,
                     "import_price": import_price,
                     "export_price": export_price,
+                    "price_interpolated": price_interpolated,
                 }
             )
 
@@ -202,8 +215,8 @@ def build_do_plan_preview(
     roundtrip_ratio = charge_ratio * discharge_ratio
     current_hour = now_utc.replace(minute=0, second=0, microsecond=0)
     future_rows = [row for row in parsed_rows if row["end"] > now_utc]
+    trade_rows = [row for row in future_rows if not row["price_interpolated"]]
 
-    # Safety-charge preview: Step-3 reserve deficit is authoritative.
     safety_charge_needed = reserve_deficit > ENERGY_EPSILON_KWH
     remaining_battery_kwh = reserve_deficit
     safety_hours: list[dict[str, Any]] = []
@@ -214,10 +227,7 @@ def build_do_plan_preview(
             break
         available_fraction = 1.0
         if row["start"] <= now_utc < row["end"]:
-            available_fraction = max(
-                0.0,
-                min(1.0, (row["end"] - now_utc).total_seconds() / 3600.0),
-            )
+            available_fraction = max(0.0, min(1.0, (row["end"] - now_utc).total_seconds() / 3600.0))
         max_battery_energy = max_charge_power_w / 1000.0 * available_fraction * charge_ratio
         if max_battery_energy <= 0:
             continue
@@ -228,6 +238,7 @@ def build_do_plan_preview(
                 "start": row["start"].isoformat(),
                 "end": row["end"].isoformat(),
                 "import_price": round(row["import_price"], 6),
+                "price_interpolated": row["price_interpolated"],
                 "available_hour_fraction": round(available_fraction, 6),
                 "max_battery_energy_kwh": round(max_battery_energy, 3),
                 "candidate_battery_energy_kwh": round(battery_energy, 3),
@@ -237,110 +248,47 @@ def build_do_plan_preview(
         remaining_battery_kwh -= battery_energy
 
     safety_unallocated = max(remaining_battery_kwh, 0.0)
-    safety_schedule_sufficient = (
-        not safety_charge_needed or safety_unallocated <= ENERGY_EPSILON_KWH
-    )
+    safety_schedule_sufficient = not safety_charge_needed or safety_unallocated <= ENERGY_EPSILON_KWH
     required_grid_input = reserve_deficit / charge_ratio if safety_charge_needed else 0.0
 
-    # Reserve-free energy may be considered for discharge only after losses.
     max_deliverable_from_free = free_above_reserve * discharge_ratio
-    discharge_allowed = (
-        not safety_charge_needed
-        and free_above_reserve > ENERGY_EPSILON_KWH
-        and soc > reserve_target
-    )
+    discharge_allowed = not safety_charge_needed and free_above_reserve > ENERGY_EPSILON_KWH and soc > reserve_target
 
-    # Solar-capacity protection is a temporary conservative Step-4 gate.
     free_capacity_kwh = capacity * max(100.0 - soc, 0.0) / 100.0
-    solar_capacity_protection = (
-        not safety_charge_needed
-        and first_usable > now_utc
-        and free_capacity_kwh > ENERGY_EPSILON_KWH
-    )
+    solar_capacity_protection = not safety_charge_needed and first_usable > now_utc and free_capacity_kwh > ENERGY_EPSILON_KWH
     solar_window_end_ts = first_usable.timestamp() + SOLAR_PROTECTION_HOURS * 3600
-    solar_window = [
-        row
-        for row in parsed_rows
-        if first_usable <= row["start"] and row["start"].timestamp() < solar_window_end_ts
-    ]
-    solar_surplus_ac_kwh = sum(
-        max(row["solar_kwh"] - row["home_kwh"], 0.0) for row in solar_window
-    )
+    solar_window = [row for row in parsed_rows if first_usable <= row["start"] and row["start"].timestamp() < solar_window_end_ts]
+    solar_surplus_ac_kwh = sum(max(row["solar_kwh"] - row["home_kwh"], 0.0) for row in solar_window)
 
-    # Price diagnostics.
     import_prices = [row["import_price"] for row in future_rows]
     price_min_import = min(import_prices) if import_prices else None
     price_max_import = max(import_prices) if import_prices else None
-    price_spread_import = (
-        price_max_import - price_min_import
-        if price_min_import is not None and price_max_import is not None
-        else None
-    )
+    price_spread_import = price_max_import - price_min_import if price_min_import is not None and price_max_import is not None else None
 
-    # Separate self-use and export pair searches. No import/export substitution.
     best_self_use: dict[str, Any] | None = None
     best_export: dict[str, Any] | None = None
-    for i, charge_row in enumerate(future_rows):
+    for i, charge_row in enumerate(trade_rows):
         effective_cost = charge_row["import_price"] / roundtrip_ratio
-        for discharge_row in future_rows[i + 1 :]:
+        for discharge_row in trade_rows[i + 1 :]:
             self_use_margin = discharge_row["import_price"] - effective_cost
             export_margin = discharge_row["export_price"] - effective_cost
             if best_self_use is None or self_use_margin > best_self_use["margin"]:
-                best_self_use = {
-                    "charge_time": charge_row["start"],
-                    "charge_price": charge_row["import_price"],
-                    "discharge_time": discharge_row["start"],
-                    "discharge_price": discharge_row["import_price"],
-                    "effective_cost": effective_cost,
-                    "margin": self_use_margin,
-                }
+                best_self_use = {"charge_time": charge_row["start"], "charge_price": charge_row["import_price"], "discharge_time": discharge_row["start"], "discharge_price": discharge_row["import_price"], "effective_cost": effective_cost, "margin": self_use_margin}
             if best_export is None or export_margin > best_export["margin"]:
-                best_export = {
-                    "charge_time": charge_row["start"],
-                    "charge_price": charge_row["import_price"],
-                    "discharge_time": discharge_row["start"],
-                    "discharge_price": discharge_row["export_price"],
-                    "effective_cost": effective_cost,
-                    "margin": export_margin,
-                }
+                best_export = {"charge_time": charge_row["start"], "charge_price": charge_row["import_price"], "discharge_time": discharge_row["start"], "discharge_price": discharge_row["export_price"], "effective_cost": effective_cost, "margin": export_margin}
 
-    self_use_profitable = bool(
-        best_self_use is not None and best_self_use["margin"] >= min_margin
-    )
-    export_profitable = bool(
-        best_export is not None and best_export["margin"] >= min_margin
-    )
-
-    current_is_self_use_discharge = bool(
-        best_self_use is not None
-        and best_self_use["discharge_time"] == current_hour
-        and self_use_profitable
-    )
-    current_is_export_discharge = bool(
-        best_export is not None
-        and best_export["discharge_time"] == current_hour
-        and export_profitable
-    )
+    self_use_profitable = bool(best_self_use is not None and best_self_use["margin"] >= min_margin)
+    export_profitable = bool(best_export is not None and best_export["margin"] >= min_margin)
+    current_is_self_use_discharge = bool(best_self_use is not None and best_self_use["discharge_time"] == current_hour and self_use_profitable)
+    current_is_export_discharge = bool(best_export is not None and best_export["discharge_time"] == current_hour and export_profitable)
     current_is_best_charge = bool(
-        (
-            best_self_use is not None
-            and best_self_use["charge_time"] == current_hour
-            and self_use_profitable
-        )
-        or (
-            best_export is not None
-            and best_export["charge_time"] == current_hour
-            and export_profitable
-        )
+        (best_self_use is not None and best_self_use["charge_time"] == current_hour and self_use_profitable)
+        or (best_export is not None and best_export["charge_time"] == current_hour and export_profitable)
     )
 
     if safety_charge_needed:
         preview_decision = "safety_charge_preview"
-        reason = (
-            "reserve_deficit_can_be_allocated_before_usable_solar"
-            if safety_schedule_sufficient
-            else "reserve_deficit_exceeds_available_pre_solar_charge_window"
-        )
+        reason = "reserve_deficit_can_be_allocated_before_usable_solar" if safety_schedule_sufficient else "reserve_deficit_exceeds_available_pre_solar_charge_window"
     elif discharge_allowed and current_is_self_use_discharge:
         preview_decision = "discharge_self_use_preview"
         reason = "current_hour_best_self_use_discharge_candidate"
@@ -360,9 +308,10 @@ def build_do_plan_preview(
         preview_decision = "no_action"
         reason = "no_safety_need_and_no_profitable_pair"
 
+    result_status = "degraded" if effective_horizon < HOURS or input_result.get("status") in {"degraded", "partial"} else "ready"
     return {
         **base,
-        "status": "ready",
+        "status": result_status,
         "valid": True,
         "reason": reason,
         "blockers": [],
@@ -400,4 +349,5 @@ def build_do_plan_preview(
         "solar_surplus_ac_kwh": round(solar_surplus_ac_kwh, 3),
         "discharge_preview_allowed": discharge_allowed,
         "current_hour": current_hour.isoformat(),
+        "trade_rows_excluded_interpolated": len(future_rows) - len(trade_rows),
     }

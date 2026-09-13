@@ -94,6 +94,7 @@ def test_exact_72_hours_are_joined_on_exact_quarter_timestamps() -> None:
     assert result["status"] == "ready"
     assert result["hour_count"] == 72
     assert result["fully_valid_hours"] == 72
+    assert result["effective_horizon_hours"] == 72
     assert result["rows"][0]["solar_kwh"] == 0.15
     assert result["rows"][0]["solar_quarters"][0]["kwh"] == 0.0
     assert result["rows"][0]["price_valid"] is True
@@ -103,7 +104,7 @@ def test_exact_72_hours_are_joined_on_exact_quarter_timestamps() -> None:
     assert result["physical_execution_authority"] is False
 
 
-def test_missing_solar_quarter_stays_missing_and_never_becomes_zero() -> None:
+def test_missing_solar_quarter_stays_missing_and_degrades_locally() -> None:
     start = datetime(2026, 9, 9, 0, 0, tzinfo=timezone.utc)
     solar, prices = _points(start)
     missing_start = start + timedelta(minutes=30)
@@ -116,17 +117,20 @@ def test_missing_solar_quarter_stays_missing_and_never_becomes_zero() -> None:
         prices_status="ok",
         prices_freshness="fresh",
     )
-    assert result["status"] == "partial"
+    assert result["status"] == "degraded"
     assert result["valid_solar_hours"] == 71
     assert result["fully_valid_hours"] == 71
+    assert result["effective_horizon_hours"] == 0
+    assert result["first_invalid_index"] == 0
     assert result["rows"][0]["solar_valid"] is False
     assert result["rows"][0]["solar_kwh"] is None
     assert result["rows"][0]["solar_quarters"][2]["kwh"] is None
 
 
-def test_nan_price_is_invalid_and_not_silently_normalized() -> None:
+def test_single_nan_price_is_recovered_only_by_explicit_neighbor_interpolation() -> None:
     start = datetime(2026, 9, 9, 0, 0, tzinfo=timezone.utc)
     solar, prices = _points(start)
+    expected = (prices[4].import_all_in + prices[6].import_all_in) / 2.0
     prices[5].import_all_in = float("nan")
     result = build_do_plan_input_72h(
         contract=_contract(start),
@@ -136,10 +140,14 @@ def test_nan_price_is_invalid_and_not_silently_normalized() -> None:
         prices_status="ok",
         prices_freshness="fresh",
     )
-    assert result["status"] == "partial"
-    assert result["valid_price_hours"] == 71
-    assert result["rows"][1]["price_valid"] is False
-    assert result["rows"][1]["import_price"] is None
+    quarter = result["rows"][1]["price_quarters"][1]
+    assert result["status"] == "ready"
+    assert result["valid_price_hours"] == 72
+    assert result["rows"][1]["price_valid"] is True
+    assert result["interpolated_price_slots"] == 1
+    assert quarter["kind"] == "interpolated"
+    assert quarter["fallback_method"] == "neighbor_average"
+    assert abs(quarter["import_price"] - expected) < 1e-12
 
 
 def test_structural_data_can_be_runtime_blocked_without_becoming_invalid() -> None:
