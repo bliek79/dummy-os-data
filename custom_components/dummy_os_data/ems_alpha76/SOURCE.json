@@ -1,0 +1,6 @@
+{
+  "source_repository": "bliek79/dummy-os-anker-ems",
+  "source_tag": "0.0.1-alpha.76",
+  "purpose": "functional parity golden source for Dummy OS Energy EMS copy",
+  "policy": "forecast input may be adapted; EMS decision logic may not be redesigned before parity acceptance"
+}
