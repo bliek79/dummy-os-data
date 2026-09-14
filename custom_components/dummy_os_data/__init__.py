@@ -25,6 +25,9 @@ _LOGGER = logging.getLogger(__name__)
 
 type DummyOSDataConfigEntry = ConfigEntry[DummyOSHomeDataCoordinator]
 
+# Alpha.12 changes the public identity namespace while keeping the technical
+# integration domain stable. Existing registry rows are migrated in-place so
+# Home Assistant does not create duplicate entities with the new unique IDs.
 _IDENTITY_MIGRATIONS: tuple[tuple[str, str, str, str], ...] = (
     ("sensor", "do_data_grid_net_power", "do_source_grid_net_power", "sensor.do_source_grid_net_power"),
     ("sensor", "do_data_grid_import_power", "do_source_grid_import_power", "sensor.do_source_grid_import_power"),
@@ -51,12 +54,20 @@ _IDENTITY_MIGRATIONS: tuple[tuple[str, str, str, str], ...] = (
     ("select", "do_home_profile", "do_energy_profile", "select.do_energy_profile"),
 )
 
+# Direct runtime states from the old Degree Days publisher and stale states left
+# behind by the alpha.12 generated entity IDs. They are removed only when they
+# are not registered entities, both before and after platform setup.
 _DEGREE_DAYS_RUNTIME_STATE_ALIASES: tuple[str, ...] = (
-    "sensor.do_degree_days_status", "sensor.do_degree_days_history_days",
-    "sensor.do_degree_days_temperature_daily", "sensor.do_degree_days_daily",
-    "sensor.do_weighted_degree_days_daily", "sensor.do_degree_days_reference_daily",
-    "sensor.do_weighted_degree_days_reference_daily", "sensor.do_degree_days_difference",
-    "sensor.do_weighted_degree_days_difference", "sensor.do_heat_degree_days_last_day",
+    "sensor.do_degree_days_status",
+    "sensor.do_degree_days_history_days",
+    "sensor.do_degree_days_temperature_daily",
+    "sensor.do_degree_days_daily",
+    "sensor.do_weighted_degree_days_daily",
+    "sensor.do_degree_days_reference_daily",
+    "sensor.do_weighted_degree_days_reference_daily",
+    "sensor.do_degree_days_difference",
+    "sensor.do_weighted_degree_days_difference",
+    "sensor.do_heat_degree_days_last_day",
     "sensor.dummy_os_forecast_do_degree_days_status",
     "sensor.dummy_os_forecast_do_degree_days_history_days",
     "sensor.dummy_os_forecast_do_degree_days_temperature_daily",
@@ -69,6 +80,10 @@ _DEGREE_DAYS_RUNTIME_STATE_ALIASES: tuple[str, ...] = (
     "sensor.dummy_os_forecast_do_degree_days_last_day",
 )
 
+# Stable namespaces keep deterministic canonical entity IDs for automatically
+# generated aliases from previous alphas. Degree Days is included explicitly so
+# alpha.12 registrations such as sensor.dummy_os_forecast_do_degree_days_* are
+# migrated in-place to the agreed sensor.do_degree_days_* IDs.
 _ENTITY_ID_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("sensor", "do_weather_temperature", "sensor.do_weather_temperature"),
     ("sensor", "do_weather_apparent_temperature", "sensor.do_weather_apparent_temperature"),
@@ -130,25 +145,36 @@ _ENTITY_ID_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
 
 
 async def _async_noop() -> None:
-    pass
+    """Temporarily replace Weather setup while local Home state initializes."""
 
 
-async def _async_setup_cloud_sources(coordinator: DummyOSHomeDataCoordinator, weather_setup) -> None:
+async def _async_setup_cloud_sources(
+    coordinator: DummyOSHomeDataCoordinator,
+    weather_setup,
+) -> None:
+    """Initialize cloud-backed sources outside Home Assistant's setup critical path."""
     results = await asyncio.gather(
-        weather_setup(), coordinator.prices.async_setup(), coordinator.solar.async_setup(),
+        weather_setup(),
+        coordinator.prices.async_setup(),
+        coordinator.solar.async_setup(),
         return_exceptions=True,
     )
     for source_name, result in zip(("weather", "prices", "solar"), results, strict=True):
         if isinstance(result, BaseException):
             _LOGGER.warning("Dummy OS Data %s startup failed in background: %s", source_name, result)
+
     try:
         await coordinator.degree_days.async_setup()
     except Exception as err:
         _LOGGER.warning("Dummy OS Data degree-days startup failed in background: %s", err)
+
+    # Planner/model sensors listen to the Home coordinator. One consolidated
+    # notification republishes their cached results after source initialization.
     coordinator._notify()
 
 
 def _is_obsolete_home_input_state(state: State | None) -> bool:
+    """Return whether a state has the exact temporary alpha.11.4 signature."""
     if state is None:
         return False
     attrs = state.attributes
@@ -160,6 +186,7 @@ def _is_obsolete_home_input_state(state: State | None) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry) -> bool:
+    """Set up Dummy OS Forecast from a config entry."""
     _async_remove_obsolete_home_input_entities(hass)
     _async_migrate_alpha12_identities(hass)
     _async_remove_degree_days_runtime_states(hass)
@@ -169,6 +196,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry) 
         hass.config_entries.async_update_entry(entry, title=NAME)
 
     coordinator = DummyOSHomeDataCoordinator(hass, entry)
+
+    # Home history/state is local and should be available immediately. Prevent
+    # its normal Weather setup call from turning config-entry setup into a cloud wait.
     weather_setup = coordinator.weather.async_setup
     coordinator.weather.async_setup = _async_noop
     try:
@@ -179,6 +209,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry) 
     coordinator.degree_days = DummyOSDegreeDaysCoordinator(hass, coordinator.weather)
     coordinator.prices = DummyOSPricesCoordinator(hass, entry)
     coordinator.solar = DummyOSSolarCoordinator(hass, entry)
+
     entry.runtime_data = coordinator
 
     # Build the copied alpha76 EMS behind the new forecast layer before platform
@@ -187,9 +218,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry) 
     ems_runtime = await async_setup_ems_alpha76_runtime(hass, entry, coordinator)
     entry.async_on_unload(lambda: hass.async_create_task(ems_runtime.async_shutdown_shadow()))
 
+    # Register all platforms before any external source fetch. Entities expose
+    # initializing/not_loaded until the background source wave supplies data.
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    source_setup_task = hass.async_create_task(_async_setup_cloud_sources(coordinator, weather_setup))
+    source_setup_task = hass.async_create_task(
+        _async_setup_cloud_sources(coordinator, weather_setup)
+    )
     coordinator._source_setup_task = source_setup_task
     entry.async_on_unload(source_setup_task.cancel)
 
@@ -201,18 +236,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry) 
 
 
 def _async_remove_obsolete_home_input_entities(hass: HomeAssistant) -> None:
+    """Remove known automatic alpha.11.4 entities and their stale HA states."""
     registry = er.async_get(hass)
+
     for unique_id, aliases in OBSOLETE_HOME_INPUT_ENTITY_ALIASES.items():
         registered_entity_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
+
         if registered_entity_id is not None:
             if is_known_generated_entity_id("sensor", unique_id, registered_entity_id):
                 registry.async_remove(registered_entity_id)
                 hass.states.async_remove(registered_entity_id)
-                _LOGGER.info("Removed obsolete Home input entity and state %s", registered_entity_id)
+                _LOGGER.info(
+                    "Removed obsolete Home input entity and state %s",
+                    registered_entity_id,
+                )
             else:
-                _LOGGER.warning("Preserving user-renamed obsolete Home input entity %s", registered_entity_id)
+                _LOGGER.warning(
+                    "Preserving user-renamed obsolete Home input entity %s",
+                    registered_entity_id,
+                )
+
         for alias_entity_id in aliases:
-            if alias_entity_id == registered_entity_id or registry.async_get(alias_entity_id) is not None:
+            if alias_entity_id == registered_entity_id:
+                continue
+            if registry.async_get(alias_entity_id) is not None:
                 continue
             state = hass.states.get(alias_entity_id)
             if not _is_obsolete_home_input_state(state):
@@ -222,54 +269,109 @@ def _async_remove_obsolete_home_input_entities(hass: HomeAssistant) -> None:
 
 
 def _async_remove_degree_days_runtime_states(hass: HomeAssistant) -> None:
+    """Remove only unregistered Degree Days states left by old publishers or migrations."""
     registry = er.async_get(hass)
     for entity_id in _DEGREE_DAYS_RUNTIME_STATE_ALIASES:
-        if registry.async_get(entity_id) is not None or hass.states.get(entity_id) is None:
+        if registry.async_get(entity_id) is not None:
+            continue
+        if hass.states.get(entity_id) is None:
             continue
         hass.states.async_remove(entity_id)
         _LOGGER.info("Removed legacy Degree Days runtime state %s", entity_id)
 
 
 def _async_migrate_alpha12_identities(hass: HomeAssistant) -> None:
+    """Rename known registry identities from Data/Home to Source/Energy."""
     registry = er.async_get(hass)
+
     for platform, old_unique_id, new_unique_id, target_entity_id in _IDENTITY_MIGRATIONS:
-        old_entity_id = registry.async_get_entity_id(platform, DOMAIN, old_unique_id)
-        new_entity_id = registry.async_get_entity_id(platform, DOMAIN, new_unique_id)
-        if old_entity_id is None:
+        current_entity_id = registry.async_get_entity_id(platform, DOMAIN, old_unique_id)
+        if current_entity_id is None:
             continue
-        if new_entity_id is not None and new_entity_id != old_entity_id:
+
+        existing_target = registry.async_get(target_entity_id)
+        if existing_target is not None and target_entity_id != current_entity_id:
+            _LOGGER.warning(
+                "Cannot migrate %s to %s because the target entity ID already exists",
+                current_entity_id,
+                target_entity_id,
+            )
             continue
-        changes: dict[str, str] = {}
-        if new_entity_id is None:
-            changes["new_unique_id"] = new_unique_id
-        if old_entity_id != target_entity_id and registry.async_get(target_entity_id) is None:
-            changes["new_entity_id"] = target_entity_id
-        if changes:
-            registry.async_update_entity(old_entity_id, **changes)
+
+        registry.async_update_entity(
+            current_entity_id,
+            new_entity_id=target_entity_id,
+            new_unique_id=new_unique_id,
+        )
+        if current_entity_id != target_entity_id:
+            hass.states.async_remove(current_entity_id)
+        _LOGGER.info(
+            "Migrated Dummy OS Forecast identity %s/%s to %s/%s",
+            current_entity_id,
+            old_unique_id,
+            target_entity_id,
+            new_unique_id,
+        )
 
 
 def _async_migrate_generated_entity_ids(hass: HomeAssistant) -> None:
+    """Migrate known automatically generated stable-namespace entity IDs."""
     registry = er.async_get(hass)
+
     for platform, unique_id, target_entity_id in _ENTITY_ID_MIGRATIONS:
         current_entity_id = registry.async_get_entity_id(platform, DOMAIN, unique_id)
         if current_entity_id is None or current_entity_id == target_entity_id:
             continue
-        if registry.async_get(target_entity_id) is not None:
+
+        if not is_known_generated_entity_id(platform, unique_id, current_entity_id):
             continue
+
+        if registry.async_get(target_entity_id) is not None:
+            _LOGGER.warning(
+                "Cannot migrate %s to %s because the target entity ID already exists",
+                current_entity_id,
+                target_entity_id,
+            )
+            continue
+
         registry.async_update_entity(current_entity_id, new_entity_id=target_entity_id)
+        hass.states.async_remove(current_entity_id)
+        _LOGGER.info("Migrated entity ID %s to %s", current_entity_id, target_entity_id)
 
 
-async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def _async_update_listener(hass: HomeAssistant, entry: DummyOSDataConfigEntry) -> None:
+    """Reload the entry when options change."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: DummyOSDataConfigEntry) -> bool:
+    """Unload a config entry."""
     coordinator = entry.runtime_data
-    runtime = get_ems_alpha76_runtime(coordinator)
-    if runtime is not None:
-        await runtime.async_shutdown_shadow()
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
+        runtime = get_ems_alpha76_runtime(coordinator)
+        if runtime is not None:
+            await runtime.async_shutdown_shadow()
+
+        source_setup_task = getattr(coordinator, "_source_setup_task", None)
+        if source_setup_task is not None and not source_setup_task.done():
+            source_setup_task.cancel()
+            try:
+                await source_setup_task
+            except asyncio.CancelledError:
+                pass
+
+        solar = getattr(coordinator, "solar", None)
+        if solar is not None:
+            await solar.async_shutdown()
+        prices = getattr(coordinator, "prices", None)
+        if prices is not None:
+            await prices.async_shutdown()
+        degree_days = getattr(coordinator, "degree_days", None)
+        if degree_days is not None:
+            await degree_days.async_shutdown()
+        await coordinator.async_shutdown()
+
         domain_data = hass.data.get(DOMAIN)
         if isinstance(domain_data, dict):
             domain_data.pop(entry.entry_id, None)
