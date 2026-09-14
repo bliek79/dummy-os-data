@@ -72,9 +72,39 @@ class Store:
     async def async_save(self, data): self.data = data
 storage.Store = Store
 
-event = sys.modules.setdefault("homeassistant.helpers.event", types.ModuleType("homeassistant.helpers.event"))
-def async_call_later(*args, **kwargs): return lambda: None
-event.async_call_later = async_call_later
+
+def _install_event_stub() -> None:
+    """Keep the HA event import surface stable throughout pytest collection.
+
+    Some legacy regression modules rebuild parts of the Home Assistant stub
+    namespace while pytest imports the complete suite.  The alpha76 execution
+    module imports ``async_call_later`` at module import time, so restore that
+    minimal symbol before every test module is collected.  This changes only
+    the pure-test harness; production integration code is untouched.
+    """
+    parent = sys.modules.setdefault(
+        "homeassistant.helpers", types.ModuleType("homeassistant.helpers")
+    )
+    parent.__path__ = getattr(parent, "__path__", [])
+    event_module = sys.modules.get("homeassistant.helpers.event")
+    if event_module is None:
+        event_module = types.ModuleType("homeassistant.helpers.event")
+        sys.modules["homeassistant.helpers.event"] = event_module
+
+    def async_call_later(*args, **kwargs):
+        return lambda: None
+
+    event_module.async_call_later = async_call_later
+    parent.event = event_module
+
+
+_install_event_stub()
+
+
+def pytest_collect_file(file_path, parent):
+    """Reassert the event stub before pytest imports each test module."""
+    _install_event_stub()
+
 
 config_entries = sys.modules.setdefault("homeassistant.config_entries", types.ModuleType("homeassistant.config_entries"))
 class ConfigEntry: pass
