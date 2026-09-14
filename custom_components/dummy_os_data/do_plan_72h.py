@@ -1,267 +1,102 @@
-"""Observer-only native 15-minute / 72-hour planner parity layer."""
+"""Dummy OS Energy Plan72 backed by the original EMS alpha76 planner.
+
+The 15-minute / 288-slot layer remains the input and presentation contract.
+EMS policy, reserve, safety charge, home discharge and trading decisions are
+made exclusively by the vendored alpha76 planner.
+"""
+
 from __future__ import annotations
+
 from typing import Any
-from custom_components.dummy_os_data.do_plan_native_common import (
-    HOURS, SLOTS, SLOTS_PER_HOUR, SLOT_MINUTES, CHARGE_EFFICIENCY_PERCENT,
-    DISCHARGE_EFFICIENCY_PERCENT, EXECUTION_BUFFER_PERCENT, MIN_SOC_PERCENT,
-    SAFETY_RESERVE_PERCENT, USABLE_SOLAR_CONSECUTIVE_SLOTS, EPS, _finite,
-    _blocked, _expand_native_slots, _dynamic_reserve_profile,
-    _select_native_trade,
-)
-from custom_components.dummy_os_data.do_plan_native_simulation import _simulate, _aggregate_hours
-from custom_components.dummy_os_data.do_plan_native_safety import build_native_safety_plan, summarize_native_safety_plan, TOL_KWH
+
+from .ems_alpha76_adapter import plan72_public, run_plan72
 
 
-def _preview_trade_fallback(slots: list[dict[str, Any]], preview_result: dict[str, Any], charge_eff: float, discharge_eff: float) -> dict[str, Any] | None:
-    by_start = {slot["start"]: slot for slot in slots}
-    candidates: list[tuple[float, str, str, str]] = []
-    if preview_result.get("self_use_trade_profitable"):
-        margin = _finite(preview_result.get("best_self_use_margin"))
-        charge = preview_result.get("best_self_use_charge_time")
-        discharge = preview_result.get("best_self_use_discharge_time")
-        if margin is not None and isinstance(charge, str) and isinstance(discharge, str):
-            candidates.append((margin, charge, discharge, "self_use"))
-    if preview_result.get("export_trade_profitable"):
-        margin = _finite(preview_result.get("best_export_margin"))
-        charge = preview_result.get("best_export_charge_time")
-        discharge = preview_result.get("best_export_discharge_time")
-        if margin is not None and isinstance(charge, str) and isinstance(discharge, str):
-            candidates.append((margin, charge, discharge, "export"))
-    candidates.sort(reverse=True)
-    for margin, charge_time, discharge_time, kind in candidates:
-        charge = by_start.get(charge_time)
-        discharge = by_start.get(discharge_time)
-        if charge is None or discharge is None:
-            continue
-        if charge.get("price_fallback_used") or discharge.get("price_fallback_used"):
-            continue
-        if str(charge.get("price_kind") or "").lower() == "interpolated" or str(discharge.get("price_kind") or "").lower() == "interpolated":
-            continue
-        effective_cost = charge["import_price"] / (charge_eff * discharge_eff)
+def build_do_plan_72h(
+    *,
+    input_result: dict[str, Any],
+    reserve_result: dict[str, Any],
+    preview_result: dict[str, Any],
+    grid_support_result: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    raw_need = reserve_result.get("alpha76_energy_need")
+    raw_preview = preview_result.get("alpha76_planner_preview")
+    if not isinstance(raw_need, dict) or not isinstance(raw_preview, dict):
         return {
-            "kind": kind,
-            "margin": margin,
-            "charge_time": charge_time,
-            "charge_price": charge["import_price"],
-            "discharge_time": discharge_time,
-            "discharge_price": discharge["import_price"] if kind == "self_use" else discharge["export_price"],
-            "effective_charge_cost": effective_cost,
-            "minimum_trade_margin": _finite(preview_result.get("minimum_trade_margin"), non_negative=True) or 0.10,
-            "source": "preview_compatibility_fallback",
+            "status": "blocked", "valid": False,
+            "reason": "alpha76_upstream_contract_missing",
+            "blockers": ["alpha76_upstream_contract_missing"],
+            "hours": [], "slots": [], "hour_count": 0, "slot_count": 0,
+            "ems_policy_source": "0.0.1-alpha.76",
+            "shadow_only": True, "active_use_permitted": False,
+            "physical_execution_authority": False,
         }
-    return None
 
-
-def _legacy_build_do_plan_72h(*, input_result: dict[str, Any], reserve_result: dict[str, Any], preview_result: dict[str, Any], grid_support_result: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Build native 288-slot EMS parity simulation and hourly Apex aggregation."""
-    effective_horizon = input_result.get("effective_horizon_hours")
-    if not isinstance(effective_horizon, int):
-        effective_horizon = HOURS if input_result.get("fully_valid_hours") == HOURS else 0
-    effective_horizon = max(0, min(HOURS, effective_horizon))
-    base = {
-        "shadow_only": True,
-        "active_use_permitted": False,
-        "physical_execution_authority": False,
-        "plan_store_write": False,
-        "scheduler_invoked": False,
-        "safety_chain_invoked": False,
-        "service_calls_performed": False,
-        "native_resolution_minutes": SLOT_MINUTES,
-        "native_slot_count": SLOTS,
-        "planner_resolution_minutes": SLOT_MINUTES,
-        "planner_slot_count": SLOTS,
-        "dashboard_resolution_minutes": 60,
-        "planner_hour_count": HOURS,
-        "effective_horizon_hours": effective_horizon,
-        "effective_horizon_slots": effective_horizon * SLOTS_PER_HOUR,
-        "valid_through": input_result.get("valid_through"),
-        "input_rows_signature": input_result.get("rows_signature"),
-        "reserve_input_rows_signature": reserve_result.get("input_rows_signature"),
-        "preview_input_rows_signature": preview_result.get("input_rows_signature"),
-        "calculation_scope": "native_288_slot_old_ems_functional_parity_shadow",
-        "apex_contract": "hourly_aggregation_derived_from_native_quarters",
-    }
-
-    blockers: list[str] = []
-    if input_result.get("status") not in {"ready", "runtime_blocked", "degraded", "partial"}:
-        blockers.append("planner_input_not_structurally_available")
-    if effective_horizon <= 0:
-        blockers.append("planner_effective_horizon_empty")
-    if reserve_result.get("status") != "ready" or reserve_result.get("valid") is not True:
-        blockers.append("reserve_soc_not_ready")
-    if preview_result.get("status") not in {"ready", "degraded"} or preview_result.get("valid") is not True:
-        blockers.append("planner_preview_not_ready")
-
-    sig = input_result.get("rows_signature")
-    if sig is None or reserve_result.get("input_rows_signature") != sig or preview_result.get("input_rows_signature") != sig:
-        blockers.append("input_signature_mismatch")
-
-    raw_rows = input_result.get("rows")
-    if not isinstance(raw_rows, list) or len(raw_rows) != HOURS:
-        blockers.append("rows_not_exactly_72")
-    soc = _finite(reserve_result.get("soc_percent"), non_negative=True)
-    if soc is None or soc > 100:
-        blockers.append("soc_invalid")
-
-    slots: list[dict[str, Any]] = []
-    quarter_source = "native_quarters"
-    if isinstance(raw_rows, list):
-        slots, slot_blockers, quarter_source = _expand_native_slots(raw_rows, effective_horizon)
-        blockers.extend(slot_blockers)
-    if blockers:
-        return _blocked(base, blockers)
-    assert soc is not None
-
-    base["effective_horizon_slots"] = len(slots)
-    base["valid_through_native"] = slots[-1]["end"] if slots else input_result.get("planner_start")
-    base["quarter_source"] = quarter_source
-
-    charge_eff = CHARGE_EFFICIENCY_PERCENT / 100.0
-    discharge_eff = DISCHARGE_EFFICIENCY_PERCENT / 100.0
-    reserve_profile = _dynamic_reserve_profile(slots, discharge_eff)
-    safety = build_native_safety_plan(
-        slots=slots, reserve_profile=reserve_profile, start_soc=soc,
-        charge_eff=charge_eff, discharge_eff=discharge_eff,
-    )
-    safety_slots = safety["schedule"]
-    external_safety_source = "grid_support_selected_slots" if grid_support_result is not None else "preview_hour_advice"
-    trade = _select_native_trade(slots, preview_result, charge_eff, discharge_eff)
-    if trade is None:
-        trade = _preview_trade_fallback(slots, preview_result, charge_eff, discharge_eff)
-
-    baseline = safety["simulation"]
-    candidate = _simulate(slots=slots, start_soc=soc, reserve_profile=reserve_profile,
-                          safety_slots=safety_slots, safety_commitments=safety["commitments"],
-                          precharge_floors=safety["precharge_floors"],
-                          trade=trade, charge_eff=charge_eff, discharge_eff=discharge_eff)
-    def safe(simulation: dict[str, Any]) -> bool:
-        return all(row["end_stored_kwh"] + TOL_KWH >= reserve_profile[i+1]["execution_floor_kwh"]
-                   for i, row in enumerate(simulation["slots"]))
-    trade_rejected = trade is not None and safe(baseline) and not safe(candidate)
-    rejected_candidate = None
-    if trade_rejected:
-        # Do not buy extra safety energy merely to subsidize an unsafe trade.
-        # A valid safety-only plan must survive rejection of a trading candidate.
-        rejected_candidate = {k: v for k, v in candidate.items() if k != "slots"}
-        candidate = baseline
-    published_safety = summarize_native_safety_plan(candidate, reserve_profile, safety["commitments"])
-    candidate_hours = _aggregate_hours(candidate["slots"])
-    baseline_hours = _aggregate_hours(baseline["slots"])
-    solar_displacement = max(0.0, baseline["solar_to_battery_kwh"] - candidate["solar_to_battery_kwh"])
-    infeasible = not safe(candidate)
-
-    if infeasible:
-        status = "infeasible"
-        valid = False
-        reason = "dynamic_reserve_or_execution_buffer_breach"
-        output_blockers = ["simulated_reserve_breach"]
+    bridge = reserve_result.get("soc_bridge")
+    contract = input_result.get("time_contract")
+    if contract is not None:
+        if not isinstance(bridge, dict) or bridge.get("valid") is not True:
+            return {
+                "status": "blocked", "valid": False,
+                "reason": "planner_start_soc_not_aligned",
+                "blockers": ["planner_start_soc_not_aligned"],
+                "hours": [], "slots": [], "hour_count": 0, "slot_count": 0,
+                "ems_policy_source": "0.0.1-alpha.76",
+                "shadow_only": True, "active_use_permitted": False,
+                "physical_execution_authority": False,
+                "time_contract": contract,
+            }
+        if bridge.get("projected_at") != contract.get("window_start"):
+            return {
+                "status": "blocked", "valid": False,
+                "reason": "planner_start_soc_not_aligned",
+                "blockers": ["planner_start_soc_not_aligned"],
+                "hours": [], "slots": [], "hour_count": 0, "slot_count": 0,
+                "ems_policy_source": "0.0.1-alpha.76",
+                "shadow_only": True, "active_use_permitted": False,
+                "physical_execution_authority": False,
+                "time_contract": contract,
+            }
+        soc = bridge.get("planner_start_soc_percent")
     else:
-        status = "degraded" if effective_horizon < HOURS else "ready"
-        valid = True
-        reason = "native_288_slot_sequential_simulation_partial_horizon" if effective_horizon < HOURS else "native_288_slot_sequential_simulation_complete"
-        output_blockers = []
+        soc = reserve_result.get("soc_percent")
 
-    dynamic_reserve_values = [slot["dynamic_reserve_end_soc_percent"] for slot in candidate["slots"]]
-    execution_reserve_values = [slot["execution_reserve_end_soc_percent"] for slot in candidate["slots"]]
-    headroom_values = [slot["execution_headroom_soc_percent"] for slot in candidate["slots"]]
-    reserve_target = _finite(reserve_result.get("reserve_soc_target_percent"), non_negative=True)
+    try:
+        raw = run_plan72(
+            input_result=input_result,
+            energy_need=raw_need,
+            planner_preview=raw_preview,
+            soc_percent=soc,
+            charge_efficiency_percent=92.0,
+            discharge_efficiency_percent=92.0,
+            execution_buffer_percent=2.0,
+            max_charge_power_w=3200,
+            max_discharge_power_w=3200,
+        )
+    except (TypeError, ValueError) as err:
+        return {
+            "status": "blocked", "valid": False, "reason": str(err),
+            "blockers": ["alpha76_forecast_adapter_invalid"],
+            "hours": [], "slots": [], "hour_count": 0, "slot_count": 0,
+            "ems_policy_source": "0.0.1-alpha.76",
+            "shadow_only": True, "active_use_permitted": False,
+            "physical_execution_authority": False,
+        }
 
-    return {
-        **base,
-        "status": status,
-        "valid": valid,
-        "reason": reason,
-        "blockers": output_blockers,
-        "slot_count": len(candidate["slots"]),
-        "simulated_slot_count": len(candidate["slots"]),
-        "hour_count": len(candidate_hours),
-        "simulated_hour_count": len(candidate_hours),
-        "slots": candidate["slots"],
-        "hours": candidate_hours,
-        "baseline": {key: value for key, value in baseline.items() if key != "slots"} | {"hours": baseline_hours},
-        "candidate": {key: value for key, value in candidate.items() if key != "slots"},
-        "trade_candidate": trade,
-        "solar_displacement_kwh": round(solar_displacement, 3),
-        "losses_included": True,
-        "reserve_recalculated": True,
-        "reserve_target_soc_percent": round(reserve_target, 3) if reserve_target is not None else None,
-        "simulation_reserve_floor_soc_percent": MIN_SOC_PERCENT + SAFETY_RESERVE_PERCENT,
-        "reserve_model": "old_ems_dynamic_need_until_next_usable_solar_native_15m",
-        "usable_solar_consecutive_slots": USABLE_SOLAR_CONSECUTIVE_SLOTS,
-        "usable_solar_duration_hours": USABLE_SOLAR_CONSECUTIVE_SLOTS * SLOT_MINUTES / 60.0,
-        "dynamic_reserve_min_soc_percent": round(min(dynamic_reserve_values), 3) if dynamic_reserve_values else None,
-        "dynamic_reserve_max_soc_percent": round(max(dynamic_reserve_values), 3) if dynamic_reserve_values else None,
-        "execution_reserve_min_soc_percent": round(min(execution_reserve_values), 3) if execution_reserve_values else None,
-        "execution_reserve_max_soc_percent": round(max(execution_reserve_values), 3) if execution_reserve_values else None,
-        "minimum_execution_headroom_soc_percent": round(min(headroom_values), 3) if headroom_values else None,
-        "execution_buffer_percent": EXECUTION_BUFFER_PERCENT,
-        "dynamic_safety_slot_count": len(published_safety["selected_charge_slots"]),
-        "safety_charge_source": "native_sequential_deadline_plan",
-        "dynamic_safety_charge_source": "native_sequential_deadline_plan",
-        "safety_charge_sources": ["native_sequential_deadline_plan"],
-        "safety_plan_authority": "plan72_native",
-        "upstream_safety_source": external_safety_source,
-        "upstream_safety_advice_only": True,
-        "safety_plan": {
-            "source": "native_sequential_deadline_plan",
-            "valid": published_safety["fully_allocated"],
-            "selected_charge_slots": published_safety["selected_charge_slots"],
-            "selected_charge_slot_count": len(published_safety["selected_charge_slots"]),
-            "requested_stored_kwh": safety["requested_stored_kwh"],
-            "accepted_stored_kwh": published_safety["accepted_stored_kwh"],
-            "accepted_grid_input_kwh": published_safety["accepted_grid_input_kwh"],
-            "unmet_deadlines": published_safety["breaches"],
-            "replay_count": safety["replay_count"],
-        },
-        "trade_rejected_for_safety": trade_rejected,
-        "rejected_trade_candidate": rejected_candidate,
-        "reserve_breach_slots": candidate["reserve_breach_slots"],
-        "execution_buffer_breach_slots": candidate["execution_buffer_breach_slots"],
-        "first_execution_breach": next((
-            {"index": i, "start": row["start"], "end": row["end"],
-             "soc_percent": row["end_soc_percent"],
-             "required_soc_percent": row["execution_reserve_end_soc_percent"],
-             "shortfall_battery_kwh": round(reserve_profile[i+1]["execution_floor_kwh"] - row["end_stored_kwh"], 6)}
-            for i, row in enumerate(candidate["slots"])
-            if row["end_stored_kwh"] + TOL_KWH < reserve_profile[i+1]["execution_floor_kwh"]
-        ), None),
-        **{key: value for key, value in candidate.items() if key.endswith("_kwh")},
-        "grid_support_status": grid_support_result.get("status") if grid_support_result is not None else None,
-        "grid_support_fallback_to_preview": bool(grid_support_result is not None and grid_support_result.get("status") not in {"ready", "degraded", "infeasible"}),
-        "missing_as_zero_used": False,
-    }
-
-
-def build_do_plan_72h(**kwargs: Any) -> dict[str, Any]:
-    from custom_components.dummy_os_data.planner_time_contract import propagate_time, window_errors, finite
-    from custom_components.dummy_os_data.planner_time_views import aggregate_clock_hours
-    sources = (kwargs["input_result"], kwargs["reserve_result"], kwargs["preview_result"])
-    errors = window_errors(*sources)
-    contract = sources[0].get("time_contract")
-    bridge = sources[1].get("soc_bridge")
-    if contract is not None and (not isinstance(bridge, dict) or bridge.get("valid") is not True
-                                 or bridge.get("projected_at") != contract.get("window_start")
-                                 or finite(bridge.get("planner_start_soc_percent")) is None):
-        errors.append("planner_start_soc_not_aligned")
-    if errors:
-        return propagate_time({"status": "blocked", "valid": False, "reason": errors[0], "blockers": errors,
-                               "slots": [], "hours": [], "slot_count": 0, "hour_count": 0,
-                               "shadow_only": True, "physical_execution_authority": False,
-                               "active_use_permitted": False}, *sources)
-    if contract is not None:
-        kwargs = {**kwargs, "reserve_result": {**sources[1], "soc_percent": bridge["planner_start_soc_percent"]}}
-    result = propagate_time(_legacy_build_do_plan_72h(**kwargs), *sources)
-    if contract is not None:
-        result["soc_bridge"] = bridge
-        result["measured_soc_percent"] = sources[1].get("measured_soc_percent")
-        result["planner_start_soc_percent"] = bridge["planner_start_soc_percent"]
-        result["soc_time_basis"] = "planner_window_start_estimate"
-        result["transport_hour_count"] = len(result.get("hours") or [])
-        result["hours"] = aggregate_clock_hours(result.get("slots") or [])
-        result["hour_count"] = result["dashboard_hour_count"] = len(result["hours"])
-        result["simulated_hour_count"] = len(result.get("slots") or []) / 4
-        result["apex_contract"] = "utc_clock_hour_aggregation_with_explicit_partial_edges"
-        result["dashboard_start"] = contract["window_start"]
-        result["dashboard_end"] = contract["window_end"]
-        result["baseline_hours_grouping"] = "window_relative_transport_not_apex"
+    result = plan72_public(raw, input_result=input_result)
+    result["soc_bridge"] = bridge
+    result["measured_soc_percent"] = reserve_result.get("measured_soc_percent")
+    result["planner_start_soc_percent"] = soc
+    result["soc_time_basis"] = "planner_window_start_estimate" if contract is not None else "input_soc"
+    result["input_rows_signature"] = input_result.get("rows_signature")
+    result["reserve_input_rows_signature"] = reserve_result.get("input_rows_signature")
+    result["preview_input_rows_signature"] = preview_result.get("input_rows_signature")
+    result["grid_support_status"] = grid_support_result.get("status") if isinstance(grid_support_result, dict) else None
+    result["grid_support_advisory_only"] = True
+    result["native_resolution_minutes"] = 15
+    result["native_slot_count"] = len(result.get("slots") or [])
+    result["planner_resolution_minutes"] = 15
+    result["planner_slot_count"] = len(result.get("slots") or [])
+    result["transport_hour_count"] = len(result.get("hours") or [])
+    result["decision_resolution"] = "alpha76_hourly_over_native_15m_transport"
     return result
