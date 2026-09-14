@@ -1,4 +1,4 @@
-"""Parity coverage beyond Plan72: bridge, store, scheduler, gates and execution."""
+"""Parity coverage beyond Plan72: bridge, scheduler, gates and execution."""
 
 from __future__ import annotations
 
@@ -9,9 +9,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from custom_components.dummy_os_data.ems_alpha76.action_controller import AnkerEmsActionController
-from custom_components.dummy_os_data.ems_alpha76.const import DEFAULT_PLAN if False else PLAN_SLOT_COUNT
 from custom_components.dummy_os_data.ems_alpha76.execution import AnkerEmsExecutionController
-from custom_components.dummy_os_data.ems_alpha76.plan_store import AnkerEmsPlanStore, DEFAULT_PLAN
+from custom_components.dummy_os_data.ems_alpha76.plan_store import DEFAULT_PLAN
 from custom_components.dummy_os_data.ems_alpha76.planner_action_bridge import build_planner_action_bridge
 from custom_components.dummy_os_data.ems_alpha76.prestart_validator import AnkerEmsPreStartValidator
 from custom_components.dummy_os_data.ems_alpha76.safety_guard import AnkerEmsSafetyGuard
@@ -39,6 +38,7 @@ def automatic_plan(*, start=BASE, action="laden", purpose="veiligheidsladen", po
         "planned_end_time":(start+timedelta(hours=1)).isoformat(),
         "lifecycle_status":"pending","lifecycle_reason":"test",
         "origin":"automatic_72h_planner","purpose":purpose,
+        "planner_generated_at":BASE.isoformat(),
         "planner_identity":"identity-1","planner_signature":"signature-1",
         "price_sources":["known"],"all_prices_known":True,
     }
@@ -49,8 +49,7 @@ def test_scheduler_exact_alpha76_priority_and_statuses():
     store.plans[1]=automatic_plan(start=BASE+timedelta(minutes=3))
     store.plans[2]=automatic_plan(start=BASE-timedelta(minutes=1),action="ontladen",purpose="handel_ontladen",target=40.0)
     store.plans[3]=deepcopy(DEFAULT_PLAN)
-    scheduler=AnkerEmsScheduler(store)
-    result=scheduler.evaluate(3200,3200,now=BASE)
+    result=AnkerEmsScheduler(store).evaluate(3200,3200,now=BASE)
     assert result["scheduler_status"]=="startklaar"
     assert result["scheduler_selected_slot"]==2
     assert result["scheduler_slots"][2]["status"]=="startklaar"
@@ -114,16 +113,12 @@ def gate_data(*, soc=50.0, action="laden", target=60.0):
 
 def test_prestart_safety_and_action_controller_preserve_alpha76_gates():
     data=gate_data()
-    pre=AnkerEmsPreStartValidator().evaluate(data)
-    data.update(pre)
+    data.update(AnkerEmsPreStartValidator().evaluate(data))
     assert data["auto_prestart_required"] is True
     assert data["auto_prestart_safe"] is True
-    safety=AnkerEmsSafetyGuard().evaluate_automatic_handoff(data)
-    data.update(safety)
+    data.update(AnkerEmsSafetyGuard().evaluate_automatic_handoff(data))
     assert data["auto_safety_handoff_safe"] is True
-    # Legacy manual safety/controller path is also preserved.
-    manual_safety=AnkerEmsSafetyGuard().evaluate(data)
-    data.update(manual_safety)
+    data.update(AnkerEmsSafetyGuard().evaluate(data))
     controller=AnkerEmsActionController().evaluate(data)
     assert controller["controller_ready"] is True
     assert controller["controller_action"]=="laden"
@@ -140,32 +135,25 @@ def test_prestart_blocks_same_live_soc_direction_as_alpha76():
 
 class FakeState:
     def __init__(self,state,last_changed):
-        self.state=str(state); self.last_changed=last_changed; self.last_updated=last_changed
-        self.attributes={}
-
+        self.state=str(state); self.last_changed=last_changed; self.last_updated=last_changed; self.attributes={}
 class FakeStates:
     def __init__(self,values): self.values=values
     def get(self,eid): return self.values.get(eid)
-
 class FakeServices:
     def __init__(self,hass,coordinator): self.calls=[]; self.hass=hass; self.coordinator=coordinator
     async def async_call(self,domain,service,data,target=None,blocking=True):
         eid=(target or {}).get("entity_id"); self.calls.append((domain,service,eid,dict(data)))
-        now=BASE-timedelta(seconds=120)
+        old=BASE-timedelta(seconds=120)
         if domain=="select" and eid=="select.mode":
-            option=data["option"]; self.hass.states.values[eid]=FakeState(option,now); self.coordinator.data["operating_mode"]=option
+            option=data["option"]; self.hass.states.values[eid]=FakeState(option,old); self.coordinator.data["operating_mode"]=option
         elif domain=="select" and eid=="select.direction":
-            option=data["option"]; self.hass.states.values[eid]=FakeState(option,now); self.coordinator.data["action_direction"]=option
+            option=data["option"]; self.hass.states.values[eid]=FakeState(option,old); self.coordinator.data["action_direction"]=option
         elif domain=="number" and eid=="number.power":
-            value=data["value"]; self.hass.states.values[eid]=FakeState(value,now); self.coordinator.data["power_setpoint_w"]=value
-
+            value=data["value"]; self.hass.states.values[eid]=FakeState(value,old); self.coordinator.data["power_setpoint_w"]=value
 class FakeHass:
     def __init__(self,states): self.states=FakeStates(states); self.services=None
     def async_create_task(self,coro,*args): return asyncio.create_task(coro)
-
-class FakePhysical:
-    data={"active":False}
-
+class FakePhysical: data={"active":False}
 class FakeCoordinator:
     def __init__(self,data,store):
         self.data=data; self.plan_store=store; self.physical_test=FakePhysical()
@@ -178,33 +166,21 @@ async def test_automatic_execution_exact_safe_order_and_safe_stop(monkeypatch):
     import custom_components.dummy_os_data.ems_alpha76.execution as execution_module
     async def no_sleep(_seconds): return None
     monkeypatch.setattr(execution_module.asyncio,"sleep",no_sleep)
-
     old=BASE-timedelta(seconds=120)
-    states={
-        "select.mode":FakeState("self_consumption",old),
-        "select.direction":FakeState("charge",old),
-        "number.power":FakeState(0,old),
-    }
+    states={"select.mode":FakeState("self_consumption",old),"select.direction":FakeState("charge",old),"number.power":FakeState(0,old)}
     store=MemoryPlanStore(); store.plans[1]=automatic_plan(start=BASE)
     data=gate_data(); data.update({
         "auto_shadow_execution_permitted":True,"auto_shadow_armed":True,
         "auto_final_revalidation_safe":True,"auto_mode_switch_preview_ready":True,
         "auto_final_revalidation_selected_slot":1,"execution_active":False,
         "physical_test_active":False,"operating_mode":"self_consumption",
-        "battery_capacity_kwh":7.2,"charge_efficiency_percent":92.0,
-        "discharge_efficiency_percent":92.0,
+        "battery_capacity_kwh":7.2,"charge_efficiency_percent":92.0,"discharge_efficiency_percent":92.0,
     })
-    hass=FakeHass(states); coordinator=FakeCoordinator(data,store)
-    hass.services=FakeServices(hass,coordinator)
-    execution=AnkerEmsExecutionController(hass,"test")
-    execution.attach_coordinator(coordinator)
-
+    hass=FakeHass(states); coordinator=FakeCoordinator(data,store); hass.services=FakeServices(hass,coordinator)
+    execution=AnkerEmsExecutionController(hass,"test"); execution.attach_coordinator(coordinator)
     started=await execution.async_execute_automatic_plan("identity-1")
     assert started is True
-    calls=hass.services.calls
-    # If power was available in self_consumption the original code first pins 0 W,
-    # then changes mode, pins 0 W again, chooses direction and finally applies power.
-    assert calls[:5]==[
+    assert hass.services.calls[:5]==[
         ("number","set_value","number.power",{"value":0}),
         ("select","select_option","select.mode",{"option":"third_party_control"}),
         ("number","set_value","number.power",{"value":0}),
@@ -212,7 +188,6 @@ async def test_automatic_execution_exact_safe_order_and_safe_stop(monkeypatch):
         ("number","set_value","number.power",{"value":800}),
     ]
     assert store.lifecycle[-1]==(1,"actief","automatic_execution_running")
-
     await execution.async_stop("manual_stop",emergency=False)
     assert hass.services.calls[-2:]==[
         ("number","set_value","number.power",{"value":0}),
