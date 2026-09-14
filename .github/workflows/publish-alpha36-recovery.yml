@@ -3,7 +3,12 @@ name: Publish alpha.36 recovery
 on:
   push:
     branches: [ems-copy-alpha76-parity]
-    paths: [.github/workflows/publish-alpha36-recovery.yml]
+    paths:
+      - .github/workflows/publish-alpha36-recovery.yml
+      - RELEASE_NOTES_0.2.0-alpha.36.md
+      - custom_components/dummy_os_data/manifest.json
+      - custom_components/dummy_os_data/const.py
+      - tests/test_release_consistency.py
 
 permissions:
   contents: write
