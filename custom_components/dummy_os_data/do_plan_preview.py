@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from .ems_alpha76_adapter import (
+from custom_components.dummy_os_data.ems_alpha76_adapter import (
     CHARGE_EFFICIENCY_PERCENT,
     DISCHARGE_EFFICIENCY_PERCENT,
     MAX_CHARGE_POWER_W,
@@ -33,38 +33,13 @@ def build_do_plan_preview(
     max_charge_power_w: int = DEFAULT_MAX_CHARGE_POWER_W,
     max_discharge_power_w: int = DEFAULT_MAX_DISCHARGE_POWER_W,
 ) -> dict[str, Any]:
-    """Run the alpha76 preview on Dummy OS Data transport rows."""
     raw_need = reserve_result.get("alpha76_energy_need")
     if not isinstance(raw_need, dict):
-        return {
-            "status": "blocked", "valid": False,
-            "reason": "alpha76_energy_need_missing",
-            "blockers": ["alpha76_energy_need_missing"],
-            "preview_decision": "blocked",
-            "ems_policy_source": "0.0.1-alpha.76",
-            "shadow_only": True, "active_use_permitted": False,
-            "physical_execution_authority": False,
-        }
+        return {"status":"blocked","valid":False,"reason":"alpha76_energy_need_missing","blockers":["alpha76_energy_need_missing"],"preview_decision":"blocked","ems_policy_source":"0.0.1-alpha.76","shadow_only":True,"active_use_permitted":False,"physical_execution_authority":False}
     try:
-        raw = run_preview(
-            input_result=input_result,
-            energy_need=raw_need,
-            soc_percent=reserve_result.get("soc_percent"),
-            charge_efficiency_percent=charge_efficiency_percent,
-            discharge_efficiency_percent=discharge_efficiency_percent,
-            minimum_trade_margin=minimum_trade_margin,
-            max_charge_power_w=max_charge_power_w,
-            now=now,
-        )
+        raw = run_preview(input_result=input_result, energy_need=raw_need, soc_percent=reserve_result.get("soc_percent"), charge_efficiency_percent=charge_efficiency_percent, discharge_efficiency_percent=discharge_efficiency_percent, minimum_trade_margin=minimum_trade_margin, max_charge_power_w=max_charge_power_w, now=now)
     except (TypeError, ValueError) as err:
-        return {
-            "status": "blocked", "valid": False,
-            "reason": str(err), "blockers": ["alpha76_forecast_adapter_invalid"],
-            "preview_decision": "blocked",
-            "ems_policy_source": "0.0.1-alpha.76",
-            "shadow_only": True, "active_use_permitted": False,
-            "physical_execution_authority": False,
-        }
+        return {"status":"blocked","valid":False,"reason":str(err),"blockers":["alpha76_forecast_adapter_invalid"],"preview_decision":"blocked","ems_policy_source":"0.0.1-alpha.76","shadow_only":True,"active_use_permitted":False,"physical_execution_authority":False}
     result = preview_public(raw, input_result=input_result)
     result["soc_percent"] = reserve_result.get("soc_percent")
     result["reserve_source"] = "alpha76_energy_need"
