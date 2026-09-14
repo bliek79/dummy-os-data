@@ -18,7 +18,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m pip install --upgrade pytest
+      - run: python -m pip install --upgrade pytest pytest-asyncio
       - name: Compile integration and tests
         run: python -m compileall -q custom_components/dummy_os_data tests
       - name: Verify vendored alpha76 source tag
@@ -26,6 +26,6 @@ jobs:
           grep -F 'SOURCE_TAG = "0.0.1-alpha.76"' custom_components/dummy_os_data/ems_alpha76/__init__.py
           test -f custom_components/dummy_os_data/ems_alpha76/SOURCE_HASHES.json
       - name: Run golden EMS core parity fixtures
-        run: python -m pytest -q tests/test_ems_alpha76_core_parity.py
+        run: python -m pytest -q tests/test_ems_alpha76_core_parity.py tests/test_ems_alpha76_quarter_offset_parity.py tests/test_ems_alpha76_full_chain_parity.py
       - name: Run full regression suite
         run: python -m pytest -q
