@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .ems_alpha76_adapter import plan72_public, run_plan72
+from custom_components.dummy_os_data.ems_alpha76_adapter import plan72_public, run_plan72
 
 
 def build_do_plan_72h(
@@ -22,66 +22,21 @@ def build_do_plan_72h(
     raw_need = reserve_result.get("alpha76_energy_need")
     raw_preview = preview_result.get("alpha76_planner_preview")
     if not isinstance(raw_need, dict) or not isinstance(raw_preview, dict):
-        return {
-            "status": "blocked", "valid": False,
-            "reason": "alpha76_upstream_contract_missing",
-            "blockers": ["alpha76_upstream_contract_missing"],
-            "hours": [], "slots": [], "hour_count": 0, "slot_count": 0,
-            "ems_policy_source": "0.0.1-alpha.76",
-            "shadow_only": True, "active_use_permitted": False,
-            "physical_execution_authority": False,
-        }
+        return {"status":"blocked","valid":False,"reason":"alpha76_upstream_contract_missing","blockers":["alpha76_upstream_contract_missing"],"hours":[],"slots":[],"hour_count":0,"slot_count":0,"ems_policy_source":"0.0.1-alpha.76","shadow_only":True,"active_use_permitted":False,"physical_execution_authority":False}
 
     bridge = reserve_result.get("soc_bridge")
     contract = input_result.get("time_contract")
     if contract is not None:
-        if not isinstance(bridge, dict) or bridge.get("valid") is not True:
-            return {
-                "status": "blocked", "valid": False,
-                "reason": "planner_start_soc_not_aligned",
-                "blockers": ["planner_start_soc_not_aligned"],
-                "hours": [], "slots": [], "hour_count": 0, "slot_count": 0,
-                "ems_policy_source": "0.0.1-alpha.76",
-                "shadow_only": True, "active_use_permitted": False,
-                "physical_execution_authority": False,
-                "time_contract": contract,
-            }
-        if bridge.get("projected_at") != contract.get("window_start"):
-            return {
-                "status": "blocked", "valid": False,
-                "reason": "planner_start_soc_not_aligned",
-                "blockers": ["planner_start_soc_not_aligned"],
-                "hours": [], "slots": [], "hour_count": 0, "slot_count": 0,
-                "ems_policy_source": "0.0.1-alpha.76",
-                "shadow_only": True, "active_use_permitted": False,
-                "physical_execution_authority": False,
-                "time_contract": contract,
-            }
+        if not isinstance(bridge, dict) or bridge.get("valid") is not True or bridge.get("projected_at") != contract.get("window_start"):
+            return {"status":"blocked","valid":False,"reason":"planner_start_soc_not_aligned","blockers":["planner_start_soc_not_aligned"],"hours":[],"slots":[],"hour_count":0,"slot_count":0,"ems_policy_source":"0.0.1-alpha.76","shadow_only":True,"active_use_permitted":False,"physical_execution_authority":False,"time_contract":contract}
         soc = bridge.get("planner_start_soc_percent")
     else:
         soc = reserve_result.get("soc_percent")
 
     try:
-        raw = run_plan72(
-            input_result=input_result,
-            energy_need=raw_need,
-            planner_preview=raw_preview,
-            soc_percent=soc,
-            charge_efficiency_percent=92.0,
-            discharge_efficiency_percent=92.0,
-            execution_buffer_percent=2.0,
-            max_charge_power_w=3200,
-            max_discharge_power_w=3200,
-        )
+        raw = run_plan72(input_result=input_result, energy_need=raw_need, planner_preview=raw_preview, soc_percent=soc, charge_efficiency_percent=92.0, discharge_efficiency_percent=92.0, execution_buffer_percent=2.0, max_charge_power_w=3200, max_discharge_power_w=3200)
     except (TypeError, ValueError) as err:
-        return {
-            "status": "blocked", "valid": False, "reason": str(err),
-            "blockers": ["alpha76_forecast_adapter_invalid"],
-            "hours": [], "slots": [], "hour_count": 0, "slot_count": 0,
-            "ems_policy_source": "0.0.1-alpha.76",
-            "shadow_only": True, "active_use_permitted": False,
-            "physical_execution_authority": False,
-        }
+        return {"status":"blocked","valid":False,"reason":str(err),"blockers":["alpha76_forecast_adapter_invalid"],"hours":[],"slots":[],"hour_count":0,"slot_count":0,"ems_policy_source":"0.0.1-alpha.76","shadow_only":True,"active_use_permitted":False,"physical_execution_authority":False}
 
     result = plan72_public(raw, input_result=input_result)
     result["soc_bridge"] = bridge
