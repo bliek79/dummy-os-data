@@ -38,24 +38,40 @@ def aligned_reference(input_result:dict[str,Any],fallback:Any) -> Any:
 
 
 def subscribe_upstream(entity:Any,unique_ids:list[str]) -> Any:
+    from homeassistant.core import callback
     from homeassistant.helpers import entity_registry as er
     from homeassistant.helpers.event import async_track_state_change_event
     from .const import DOMAIN
     registry=er.async_get(entity.hass)
     ids=[registry.async_get_entity_id("sensor",DOMAIN,uid) for uid in unique_ids]
     ids=[i for i in ids if i]
-    return async_track_state_change_event(entity.hass,ids,lambda event:entity._schedule_refresh()) if ids else (lambda:None)
+    if not ids:
+        return lambda:None
+
+    # Home Assistant dispatches an undecorated synchronous event listener in an
+    # executor thread.  _schedule_refresh() creates an asyncio task and therefore
+    # must run on the HA event loop.  Mark the wrapper as a HA callback so the
+    # event helper keeps this handoff on the event-loop thread.
+    @callback
+    def changed(_event:Any) -> None:
+        entity._schedule_refresh()
+
+    return async_track_state_change_event(entity.hass,ids,changed)
 
 
 def subscribe_bridge_recovery(entity:Any) -> Any:
     """Retry missing bridge telemetry on recovery, not on every power sample."""
+    from homeassistant.core import callback
     from homeassistant.helpers.event import async_track_state_change_event
     from .const import CONF_BATTERY_CHARGE_POWER_ENTITY,CONF_BATTERY_DISCHARGE_POWER_ENTITY
     entry=entity.coordinator.entry
     ids=[entry.options.get(k,entry.data.get(k)) or fallback for k,fallback in (
         (CONF_BATTERY_CHARGE_POWER_ENTITY,"sensor.do_source_battery_charge_power"),
         (CONF_BATTERY_DISCHARGE_POWER_ENTITY,"sensor.do_source_battery_discharge_power"))]
-    def changed(event:Any) -> None:
+
+    @callback
+    def changed(_event:Any) -> None:
         if getattr(entity,"_last_soc_bridge_valid",True) is False:
             entity._schedule_refresh()
+
     return async_track_state_change_event(entity.hass,ids,changed)
