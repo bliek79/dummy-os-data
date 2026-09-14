@@ -1,0 +1,31 @@
+name: EMS Alpha76 Parity CI
+
+on:
+  push:
+    branches: [ems-copy-alpha76-parity]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --upgrade pytest
+      - name: Compile integration and tests
+        run: python -m compileall -q custom_components/dummy_os_data tests
+      - name: Verify vendored alpha76 source tag
+        run: |
+          grep -F 'SOURCE_TAG = "0.0.1-alpha.76"' custom_components/dummy_os_data/ems_alpha76/__init__.py
+          test -f custom_components/dummy_os_data/ems_alpha76/SOURCE_HASHES.json
+      - name: Run golden EMS core parity fixtures
+        run: python -m pytest -q tests/test_ems_alpha76_core_parity.py
+      - name: Run full regression suite
+        run: python -m pytest -q
