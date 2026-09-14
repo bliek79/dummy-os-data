@@ -1,0 +1,92 @@
+name: Build EMS alpha76 parity vendor
+
+on:
+  push:
+    branches: [ems-copy-alpha76-parity]
+    paths:
+      - .github/workflows/build-ems-alpha76-copy.yml
+
+permissions:
+  contents: write
+
+jobs:
+  vendor-alpha76:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout recovery branch
+        uses: actions/checkout@v4
+        with:
+          ref: ems-copy-alpha76-parity
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - name: Checkout golden EMS alpha76
+        run: |
+          git clone --depth 1 --branch 0.0.1-alpha.76 https://github.com/bliek79/dummy-os-anker-ems.git /tmp/dummy-os-anker-ems
+
+      - name: Vendor alpha76 EMS source as isolated subpackage
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import shutil
+
+          src = Path('/tmp/dummy-os-anker-ems/custom_components/anker_ems')
+          dst = Path('custom_components/dummy_os_data/ems_alpha76')
+          if dst.exists():
+              shutil.rmtree(dst)
+          dst.mkdir(parents=True)
+
+          # Copy Python source only. The host integration remains dummy_os_data;
+          # this subpackage is the immutable functional reference implementation.
+          for path in sorted(src.glob('*.py')):
+              if path.name == '__init__.py':
+                  continue
+              shutil.copy2(path, dst / path.name)
+
+          (dst / '__init__.py').write_text(
+              '"""Vendored Dummy OS EMS 0.0.1-alpha.76 functional reference.\n\n'
+              'Do not redesign logic in this package during parity migration.\n'
+              '"""\n\nSOURCE_TAG = "0.0.1-alpha.76"\n',
+              encoding='utf-8',
+          )
+
+          # Keep all alpha76 constants intact except the storage/service domain,
+          # which must not collide with a concurrently installed old integration.
+          const_path = dst / 'const.py'
+          text = const_path.read_text(encoding='utf-8')
+          text = text.replace('DOMAIN = "anker_ems"', 'DOMAIN = "dummy_os_data"', 1)
+          const_path.write_text(text, encoding='utf-8')
+
+          source_meta = {
+              'source_repository': 'bliek79/dummy-os-anker-ems',
+              'source_tag': '0.0.1-alpha.76',
+              'purpose': 'functional parity golden source for Dummy OS Energy EMS copy',
+              'policy': 'forecast input may be adapted; EMS decision logic may not be redesigned before parity acceptance',
+          }
+          (dst / 'SOURCE.json').write_text(json.dumps(source_meta, indent=2) + '\n', encoding='utf-8')
+          PY
+
+      - name: Compile vendored source
+        run: python -m compileall -q custom_components/dummy_os_data/ems_alpha76
+
+      - name: Record source hashes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, json
+          root = Path('custom_components/dummy_os_data/ems_alpha76')
+          hashes = {}
+          for p in sorted(root.glob('*.py')):
+              hashes[p.name] = hashlib.sha256(p.read_bytes()).hexdigest()
+          (root / 'SOURCE_HASHES.json').write_text(json.dumps(hashes, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          PY
+
+      - name: Commit vendored golden source
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/dummy_os_data/ems_alpha76
+          git diff --cached --quiet && exit 0
+          git commit -m 'Vendor EMS alpha76 as parity golden source'
+          git push origin HEAD:ems-copy-alpha76-parity
