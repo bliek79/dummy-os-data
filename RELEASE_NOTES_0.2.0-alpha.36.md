@@ -1,5 +1,7 @@
 ## Dummy OS Energy 0.2.0-alpha.36
 
+**Tag:** `0.2.0-alpha.36`
+
 **Doel:** gecontroleerde herstel-prerelease voor live stabiliteitsvalidatie. Deze versie is niet bedoeld als fysieke EMS-cutover.
 
 ### Alpha76 EMS-kopie als functionele autoriteit
