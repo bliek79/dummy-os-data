@@ -131,16 +131,20 @@ def test_step6_modules_contain_no_home_assistant_service_calls():
         assert "hass.services" not in text
 
 
-def test_step6_sensor_bundle_registers_bridge_store_and_three_slots():
-    adapter = (ROOT / "custom_components/dummy_os_data/do_plan_grid_support_sensor.py").read_text()
-    store_adapter = (ROOT / "custom_components/dummy_os_data/do_plan_store_sensor.py").read_text()
-    assert '_attr_unique_id = "do_plan_store_bridge"' in adapter
-    assert '_attr_unique_id="do_plan_store"' in store_adapter or '_attr_unique_id = "do_plan_store"' in store_adapter
-    assert 'f"do_plan_store_slot_{slot_id}"' in store_adapter
-    assert "SLOT_COUNT=3" in (ROOT / "custom_components/dummy_os_data/do_plan_store.py").read_text().replace(" ", "")
+def test_step8b_active_bundle_no_longer_registers_alpha35_bridge_or_store():
+    comp = ROOT / "custom_components/dummy_os_data"
+    adapter = (comp / "do_plan_grid_support_sensor.py").read_text()
+    surface = (comp / "ems_alpha76_surface.py").read_text()
+    alpha76_store = (comp / "ems_alpha76/plan_store.py").read_text()
+    assert "DummyOSPlanStoreBridgeSensor" not in adapter
+    assert "build_do_plan_store_sensors" not in adapter
+    assert "build_alpha76_status_sensors(coordinator)" in adapter
+    assert "self.plan_store = runtime.plan_store" in surface
+    assert "class AnkerEmsPlanStore" in alpha76_store
+    assert "PLAN_SLOT_COUNT = 3" in (comp / "ems_alpha76/const.py").read_text()
 
 
-def test_hard_safety_flags_remain_closed_in_store_summary():
+def test_hard_safety_flags_remain_closed_in_retired_store_summary():
     summary = summarize_store(new_store_snapshot(NOW), loaded=True)
     assert summary["shadow_only"] is True
     assert summary["shadow_store_write"] is True
