@@ -1,4 +1,4 @@
-# Dummy OS Energy 0.2.0-alpha.39
+## Dummy OS Energy 0.2.0-alpha.39
 
 **Tag:** `0.2.0-alpha.39`
 
