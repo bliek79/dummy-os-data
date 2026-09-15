@@ -8,34 +8,31 @@ def read(name: str) -> str:
     return (COMP / name).read_text(encoding="utf-8")
 
 
-def test_public_operating_mode_entities_are_registered() -> None:
+def test_alpha35_operating_mode_is_removed_from_active_public_surface() -> None:
     select_py = read("select.py")
     aggregate = read("do_plan_grid_support_sensor.py")
-    assert 'do_plan_operating_mode' in select_py
-    assert 'OPERATING_MODE_OPTIONS' in select_py
-    assert 'DummyOSPlanOperatingModeSelect' in select_py
-    assert 'build_do_plan_operating_mode_sensors' in aggregate
+    assert 'do_plan_operating_mode' not in select_py
+    assert 'DummyOSPlanOperatingModeSelect' not in select_py
+    assert 'build_do_plan_operating_mode_sensors' not in aggregate
+    assert 'build_alpha76_plan_select_entities' in select_py
 
 
-def test_scheduler_safety_prestart_are_wired_to_same_mode_runtime() -> None:
-    scheduler = read("do_plan_scheduler_sensor.py")
-    safety = read("do_plan_safety_sensor.py")
-    assert 'get_do_plan_operating_mode_runtime' in scheduler
-    assert 'gate_store_for_scheduler' in scheduler
-    assert 'apply_scheduler_mode_metadata' in scheduler
-    assert 'mode_runtime' in scheduler
-    assert 'apply_safety_mode_gate' in safety
-    assert 'apply_prestart_mode_gate' in safety
-    assert 'operating_mode_signature' in safety
+def test_alpha76_execution_mode_is_per_plan_store_slot() -> None:
+    surface = read("ems_alpha76_surface.py")
+    assert '"execution_mode"' in surface
+    assert '["direct", "gepland"]' in surface
+    assert 'self.plan_store = runtime.plan_store' in surface
+    assert 'await self.plan_store.async_set_value' in surface
 
 
 def test_no_physical_execution_path_is_added() -> None:
-    operating = read("do_plan_operating_mode.py")
-    runtime = read("do_plan_operating_mode_sensor.py")
-    assert 'physical_execution_authority": False' in operating
-    assert 'service_calls_performed": False' in operating
-    assert 'mode_switch_performed": False' in operating
-    assert 'third_party_control' not in runtime
+    surface = read("ems_alpha76_surface.py")
+    runtime = read("ems_alpha76_runtime.py")
+    assert '"physical_execution_authority": False' in surface
+    assert '"shadow_only": True' in surface
+    assert '"alpha76_physical_autostart_wired": False' in runtime
+    assert '.async_execute_automatic_plan(' not in surface
+    assert '.async_execute_automatic_plan(' not in runtime
 
 
 def test_native_forecast_architecture_is_untouched() -> None:
