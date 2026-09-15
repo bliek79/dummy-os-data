@@ -4,7 +4,7 @@ from __future__ import annotations
 
 DOMAIN = "dummy_os_data"
 NAME = "Dummy OS Energy"
-VERSION = "0.2.0-alpha.38"
+VERSION = "0.2.0-alpha.39"
 
 # Legacy Energy Forecast source key retained for config-entry compatibility only.
 # Energy Forecast production always consumes the canonical Source Home Power entity.
@@ -76,7 +76,7 @@ DEFAULT_SOLAR_ACTUAL_TOTAL_ENTITY = "sensor.sb3_6_1av_41_857_pv_power"
 DEFAULT_SOLAR_ACTUAL_NORTH_DC_ENTITY = "sensor.sb3_6_1av_41_857_pv_power_a"
 DEFAULT_SOLAR_ACTUAL_SOUTH_DC_ENTITY = "sensor.sb3_6_1av_41_857_pv_power_b"
 
-PLATFORMS = ["sensor", "select", "binary_sensor", "switch", "datetime", "number"]
+PLATFORMS = ["sensor", "select", "binary_sensor", "switch", "datetime", "number", "button"]
 
 STORAGE_VERSION = 1
 STORAGE_KEY = f"{DOMAIN}.home_forecast"
