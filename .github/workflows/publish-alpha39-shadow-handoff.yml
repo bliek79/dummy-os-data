@@ -1,0 +1,123 @@
+name: Publish alpha.39 shadow handoff
+
+on:
+  push:
+    branches: [ems-copy-alpha76-parity]
+    paths:
+      - .github/workflows/publish-alpha39-shadow-handoff.yml
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --upgrade pytest pytest-asyncio
+
+      - name: Compile integration and tests
+        run: python -m compileall -q custom_components/dummy_os_data tests
+
+      - name: Verify vendored alpha76 source against immutable tag
+        run: |
+          grep -F 'SOURCE_TAG = "0.0.1-alpha.76"' custom_components/dummy_os_data/ems_alpha76/__init__.py
+          test -f custom_components/dummy_os_data/ems_alpha76/SOURCE_HASHES.json
+          git clone --quiet --depth 1 --branch 0.0.1-alpha.76 https://github.com/bliek79/dummy-os-anker-ems.git /tmp/alpha76
+          for f in energy_need.py planner_preview.py planner_72h.py planner_action_bridge.py plan_store.py scheduler.py prestart_validator.py safety_guard.py action_controller.py execution.py; do
+            cmp "/tmp/alpha76/custom_components/anker_ems/$f" "custom_components/dummy_os_data/ems_alpha76/$f"
+          done
+          python - <<'PY'
+          from pathlib import Path
+          old = Path('/tmp/alpha76/custom_components/anker_ems/const.py').read_text()
+          vendored = Path('custom_components/dummy_os_data/ems_alpha76/const.py').read_text()
+          vendored = vendored.replace('DOMAIN = "dummy_os_data"', 'DOMAIN = "anker_ems"', 1)
+          assert vendored == old, 'vendored const.py differs beyond isolated DOMAIN replacement'
+          PY
+
+      - name: Run golden EMS parity fixtures
+        run: python -m pytest -q tests/test_ems_alpha76_core_parity.py tests/test_ems_alpha76_quarter_offset_parity.py tests/test_ems_alpha76_full_chain_parity.py tests/test_ems_alpha76_public_contract.py
+
+      - name: Run non-retired regression suite
+        run: |
+          python -m pytest -q \
+            --ignore=tests/test_ems_alpha76_core_parity.py \
+            --ignore=tests/test_ems_alpha76_quarter_offset_parity.py \
+            --ignore=tests/test_ems_alpha76_full_chain_parity.py \
+            --ignore=tests/test_ems_alpha76_public_contract.py
+
+      - name: Verify Step 8G alpha76 shadow handoff contract
+        run: |
+          python -m pytest -q tests/test_step8g_alpha76_shadow_handoff_contract.py
+          python - <<'PY'
+          import ast
+          import json
+          from pathlib import Path
+
+          root = Path('custom_components/dummy_os_data')
+          version = next(
+              ast.literal_eval(node.value)
+              for node in ast.parse((root / 'const.py').read_text()).body
+              if isinstance(node, ast.Assign)
+              and any(isinstance(t, ast.Name) and t.id == 'VERSION' for t in node.targets)
+          )
+          assert version == json.loads((root / 'manifest.json').read_text())['version'] == '0.2.0-alpha.39'
+
+          button = (root / 'button.py').read_text()
+          runtime = (root / 'ems_alpha76_runtime.py').read_text()
+          assert 'async_mark_lifecycle' in button
+          assert '"pending", "shadow_start_ready_validation"' in button
+          assert 'await self.runtime.async_request_refresh()' in button
+          executable = button.replace('``execution.async_execute_selected_plan()``', '')
+          assert '.async_execute_selected_plan(' not in executable
+          assert '.async_execute_automatic_plan(' not in button
+          assert 'services.async_call' not in button
+          assert '"shadow_only": True' in button
+          assert '"physical_execution_authority": False' in button
+          assert 'data["alpha76_physical_autostart_wired"] = False' in runtime
+          assert 'def simulation_mode' in runtime and 'return True' in runtime
+          assert '"button"' in (root / 'const.py').read_text()
+          assert Path('RELEASE_NOTES_0.2.0-alpha.39.md').is_file()
+          PY
+
+      - name: Package and verify tested sources
+        run: |
+          mkdir -p dist
+          python - <<'PY'
+          import zipfile
+          from pathlib import Path
+
+          root = Path('custom_components/dummy_os_data')
+          sources = [
+              p for p in root.rglob('*')
+              if p.is_file() and '__pycache__' not in p.parts and p.suffix != '.pyc'
+          ]
+          target = Path('dist/Dummy_OS_Energy_0.2.0-alpha.39_HA_install.zip')
+          with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED) as archive:
+              for p in sorted(sources):
+                  archive.write(p, p.relative_to(root.parent))
+          with zipfile.ZipFile(target) as archive:
+              for p in sources:
+                  assert archive.read(str(p.relative_to(root.parent))) == p.read_bytes(), str(p)
+              assert not any('__pycache__' in name or name.endswith('.pyc') for name in archive.namelist())
+          PY
+          sha256sum dist/*.zip | sed 's#dist/##' > dist/SHA256SUMS-0.2.0-alpha.39.txt
+
+      - name: Publish controlled shadow prerelease
+        env:
+          GH_TOKEN: '${{ github.token }}'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a 0.2.0-alpha.39 -m 'Dummy OS Energy 0.2.0-alpha.39 - Alpha76 Shadow Lifecycle Handoff'
+          git push origin 0.2.0-alpha.39
+          gh release create 0.2.0-alpha.39 dist/*.zip dist/SHA256SUMS-0.2.0-alpha.39.txt \
+            --title 'Dummy OS Energy 0.2.0-alpha.39 - Alpha76 Shadow Lifecycle Handoff' \
+            --notes-file RELEASE_NOTES_0.2.0-alpha.39.md --prerelease --verify-tag
