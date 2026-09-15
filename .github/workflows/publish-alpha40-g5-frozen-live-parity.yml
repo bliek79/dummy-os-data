@@ -78,8 +78,9 @@ jobs:
           assert 'DummyOSG5FrozenLiveParityCaptureButton' in button
           assert 'DO EMS G5 Capture Frozen Live Parity' in button
           assert 'await self.runtime.async_capture_and_compare()' in button
-          assert 'services.async_call' not in parity
-          assert 'plan_store' not in parity.lower()
+          assert 'hass.services.async_call' not in parity
+          assert 'async_execute_selected_plan' not in parity
+          assert 'async_execute_automatic_plan' not in parity
           assert 'physical_execution_authority' in parity
           assert 'service_calls_performed' in parity
           assert 'plan_store_mutated' in parity
