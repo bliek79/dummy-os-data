@@ -6,8 +6,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .coordinator import DummyOSHomeDataCoordinator
-from .do_plan_scheduler_sensor import build_do_plan_scheduler_binary_sensors
-from .do_plan_execution_preview_sensor import build_do_plan_execution_preview_binary_sensors
+from .ems_alpha76_surface import build_alpha76_binary_sensors
 
 
 async def async_setup_entry(
@@ -15,9 +14,6 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up observer-only Dummy OS Energy binary sensors."""
+    """Expose observer-only binary state from the exact alpha76 runtime."""
     coordinator: DummyOSHomeDataCoordinator = entry.runtime_data
-    async_add_entities([
-        *build_do_plan_scheduler_binary_sensors(coordinator),
-        *build_do_plan_execution_preview_binary_sensors(coordinator),
-    ])
+    async_add_entities(build_alpha76_binary_sensors(coordinator))
