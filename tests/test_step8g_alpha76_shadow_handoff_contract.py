@@ -32,8 +32,8 @@ def test_button_platform_is_registered_and_current_release_versioned():
     const = (ROOT / "const.py").read_text(encoding="utf-8")
     manifest = (ROOT / "manifest.json").read_text(encoding="utf-8")
     assert '"button"' in const
-    assert 'VERSION = "0.2.0-alpha.40"' in const
-    assert '"version": "0.2.0-alpha.40"' in manifest
+    assert 'VERSION = "0.2.0-alpha.41"' in const
+    assert '"version": "0.2.0-alpha.41"' in manifest
 
 
 def test_shadow_handoff_uses_exact_vendored_plan_store_lifecycle_api():
