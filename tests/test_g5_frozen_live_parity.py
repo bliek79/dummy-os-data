@@ -1,0 +1,128 @@
+"""Regression contract for the G5 frozen-live A/B parity gate."""
+
+from __future__ import annotations
+
+from copy import deepcopy
+from datetime import datetime, timedelta, timezone
+
+from custom_components.dummy_os_data import ems_g5_live_parity as parity
+
+BASE = datetime(2026, 9, 15, 9, 30, tzinfo=timezone.utc)
+
+
+def _snapshot() -> dict:
+    rows = []
+    for hour in range(72):
+        start = BASE + timedelta(hours=hour)
+        solar = 0.9 if 5 <= hour <= 9 else 0.0
+        import_price = 0.08 if hour == 2 else 0.22
+        export_price = 0.38 if hour == 18 else 0.10
+        rows.append(
+            {
+                "start": start.isoformat(),
+                "end": (start + timedelta(hours=1)).isoformat(),
+                "home_kwh": 0.42,
+                "solar_kwh": solar,
+                "import_price": import_price,
+                "export_price": export_price,
+                "price_source": "known",
+                "price_quarters": [
+                    {
+                        "start": (start + timedelta(minutes=15 * quarter)).isoformat(),
+                        "kind": "known_pt15m",
+                    }
+                    for quarter in range(4)
+                ],
+                "fully_valid": True,
+            }
+        )
+    input_result = {
+        "status": "ready",
+        "valid": True,
+        "rows": rows,
+        "rows_signature": "g5-live-fixture",
+        "time_contract": {
+            "window_start": BASE.isoformat(),
+            "window_end": (BASE + timedelta(hours=72)).isoformat(),
+            "window_id": "g5-live-window",
+        },
+        "planner_resolution_minutes": 15,
+        "planner_horizon_hours": 72,
+        "planner_slot_count": 288,
+    }
+    return {
+        "schema_version": 1,
+        "captured_at": BASE.isoformat(),
+        "input_result": input_result,
+        "input_rows_signature": input_result["rows_signature"],
+        "time_contract": deepcopy(input_result["time_contract"]),
+        "measured_soc_percent": 17.0,
+        "planner_start_soc_percent": 17.0,
+        "soc_bridge": {"valid": True, "planner_start_soc_percent": 17.0},
+        "profile": "normal",
+        "config": {
+            "battery_capacity_kwh": 7.2,
+            "min_soc_percent": 5.0,
+            "software_reserve_percent": 7.0,
+            "execution_buffer_percent": 2.0,
+            "max_charge_power_w": 3200,
+            "max_discharge_power_w": 3200,
+            "charge_efficiency_percent": 92.0,
+            "discharge_efficiency_percent": 92.0,
+            "minimum_trade_margin": 0.10,
+            "electrical_profile": "dedicated_group",
+        },
+        "shadow_only": True,
+        "physical_execution_authority": False,
+    }
+
+
+def test_same_frozen_input_is_exact_alpha76_match():
+    snapshot = _snapshot()
+    result = parity.compare_frozen_live_snapshot(snapshot)
+    assert result["status"] == "pass"
+    assert result["exact_match"] is True
+    assert result["difference_count"] == 0
+    assert result["differences"] == []
+    assert result["shadow_only"] is True
+    assert result["physical_execution_authority"] is False
+    assert result["service_calls_performed"] is False
+    assert result["plan_store_mutated"] is False
+    assert result["golden_decision"] == result["copy_decision"]
+
+
+def test_snapshot_fingerprint_is_deterministic_and_content_sensitive():
+    first = _snapshot()
+    second = deepcopy(first)
+    assert parity.snapshot_fingerprint(first) == parity.snapshot_fingerprint(second)
+    second["input_result"]["rows"][0]["home_kwh"] = 0.43
+    assert parity.snapshot_fingerprint(first) != parity.snapshot_fingerprint(second)
+
+
+def test_missing_or_incomplete_input_blocks_without_running_decision_paths():
+    snapshot = _snapshot()
+    snapshot["input_result"]["rows"] = snapshot["input_result"]["rows"][:-1]
+    result = parity.compare_frozen_live_snapshot(snapshot)
+    assert result["status"] == "blocked"
+    assert result["exact_match"] is False
+    assert "input_not_72_transport_rows" in result["blockers"]
+    assert result["service_calls_performed"] is False
+    assert result["plan_store_mutated"] is False
+
+
+def test_mismatch_is_reported_with_compact_difference_paths(monkeypatch):
+    snapshot = _snapshot()
+    original = parity._copy_chain
+
+    def altered_copy(input_result, planner_soc_percent, config):
+        need, preview, plan72 = original(input_result, planner_soc_percent, config)
+        changed = deepcopy(plan72)
+        changed["auto_plan_72h_reason"] = "forced_g5_test_difference"
+        return need, preview, changed
+
+    monkeypatch.setattr(parity, "_copy_chain", altered_copy)
+    result = parity.compare_frozen_live_snapshot(snapshot)
+    assert result["status"] == "mismatch"
+    assert result["exact_match"] is False
+    assert result["difference_count"] >= 1
+    assert any("auto_plan_72h_reason" in item for item in result["differences"])
