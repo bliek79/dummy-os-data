@@ -6,17 +6,40 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 
 from custom_components.dummy_os_data import ems_g5_live_parity as parity
+from custom_components.dummy_os_data.planner_time_contract import build_time_contract
 
 BASE = datetime(2026, 9, 15, 9, 30, tzinfo=timezone.utc)
 
 
 def _snapshot() -> dict:
+    time_contract = build_time_contract(BASE)
+    window_start = datetime.fromisoformat(time_contract["window_start"])
     rows = []
+    slots = []
     for hour in range(72):
-        start = BASE + timedelta(hours=hour)
+        start = window_start + timedelta(hours=hour)
         solar = 0.9 if 5 <= hour <= 9 else 0.0
         import_price = 0.08 if hour == 2 else 0.22
         export_price = 0.38 if hour == 18 else 0.10
+        price_quarters = []
+        for quarter in range(4):
+            q_start = start + timedelta(minutes=15 * quarter)
+            q_end = q_start + timedelta(minutes=15)
+            price_quarters.append(
+                {"start": q_start.isoformat(), "kind": "known_pt15m"}
+            )
+            slots.append(
+                {
+                    "index": hour * 4 + quarter,
+                    "start": q_start.isoformat(),
+                    "end": q_end.isoformat(),
+                    "home_kwh": 0.105,
+                    "solar_kwh": solar / 4.0,
+                    "import_price": import_price,
+                    "export_price": export_price,
+                    "valid": True,
+                }
+            )
         rows.append(
             {
                 "start": start.isoformat(),
@@ -26,33 +49,29 @@ def _snapshot() -> dict:
                 "import_price": import_price,
                 "export_price": export_price,
                 "price_source": "known",
-                "price_quarters": [
-                    {
-                        "start": (start + timedelta(minutes=15 * quarter)).isoformat(),
-                        "kind": "known_pt15m",
-                    }
-                    for quarter in range(4)
-                ],
+                "price_quarters": price_quarters,
                 "fully_valid": True,
             }
         )
     input_result = {
+        # Deliberately no top-level `valid`: the production input contract does
+        # not expose it. Alpha40 incorrectly required it.
         "status": "ready",
-        "valid": True,
+        "blockers": [],
+        "runtime_blockers": [],
         "rows": rows,
-        "rows_signature": "g5-live-fixture",
-        "time_contract": {
-            "window_start": BASE.isoformat(),
-            "window_end": (BASE + timedelta(hours=72)).isoformat(),
-            "window_id": "g5-live-window",
-        },
+        "slots": slots,
+        "rows_signature": "g5-production-live-fixture",
+        "time_contract": time_contract,
         "planner_resolution_minutes": 15,
-        "planner_horizon_hours": 72,
-        "planner_slot_count": 288,
+        "transport_resolution_minutes": 60,
+        "native_expected_slot_count": 288,
+        "native_valid_slot_count": 288,
+        "time_alignment_valid": True,
     }
     return {
         "schema_version": 1,
-        "captured_at": BASE.isoformat(),
+        "captured_at": time_contract["window_start"],
         "input_result": input_result,
         "input_rows_signature": input_result["rows_signature"],
         "time_contract": deepcopy(input_result["time_contract"]),
@@ -77,8 +96,9 @@ def _snapshot() -> dict:
     }
 
 
-def test_same_frozen_input_is_exact_alpha76_match():
+def test_same_frozen_production_input_is_exact_alpha76_match():
     snapshot = _snapshot()
+    assert "valid" not in snapshot["input_result"]
     result = parity.compare_frozen_live_snapshot(snapshot)
     assert result["status"] == "pass"
     assert result["exact_match"] is True
@@ -108,6 +128,24 @@ def test_missing_or_incomplete_input_blocks_without_running_decision_paths():
     assert "input_not_72_transport_rows" in result["blockers"]
     assert result["service_calls_performed"] is False
     assert result["plan_store_mutated"] is False
+
+
+def test_invalid_native_slot_blocks():
+    snapshot = _snapshot()
+    snapshot["input_result"]["slots"][25]["valid"] = False
+    snapshot["input_result"]["native_valid_slot_count"] = 287
+    result = parity.compare_frozen_live_snapshot(snapshot)
+    assert result["status"] == "blocked"
+    assert "input_native_slots_not_fully_valid" in result["blockers"]
+    assert "input_native_valid_slot_count_not_288" in result["blockers"]
+
+
+def test_runtime_blocker_blocks():
+    snapshot = _snapshot()
+    snapshot["input_result"]["runtime_blockers"] = ["prices_freshness_stale"]
+    result = parity.compare_frozen_live_snapshot(snapshot)
+    assert result["status"] == "blocked"
+    assert "input_runtime_blocker:prices_freshness_stale" in result["blockers"]
 
 
 def test_mismatch_is_reported_with_compact_difference_paths(monkeypatch):
