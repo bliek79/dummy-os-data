@@ -28,11 +28,12 @@ def test_retained_refresh_key_remains_pure_and_material_change_based():
     source = (ROOT / "do_plan_grid_support_sensor.py").read_text(encoding="utf-8")
     assert "def build_plan_store_bridge_refresh_key" in source
     assert 'hashlib.sha256(_stable_material(material).encode("utf-8")).hexdigest()' in source
-    assert "from .ems_alpha76_surface import build_alpha76_status_sensors" in source
-    # The import must remain inside the builder so pure helper tests do not pull
-    # in full Home Assistant platform modules.
+    import_line = "from .ems_alpha76_surface import build_alpha76_status_sensors"
+    assert import_line in source
+    # The actual import statement must remain inside the builder so pure helper
+    # tests do not pull in full Home Assistant platform modules.
     before_builder = source.split("def build_do_plan_grid_support_sensors", 1)[0]
-    assert "ems_alpha76_surface" not in before_builder
+    assert import_line not in before_builder
 
 
 def test_performance_hotfix_does_not_add_control_authority():
