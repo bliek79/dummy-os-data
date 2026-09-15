@@ -18,8 +18,14 @@ from homeassistant.helpers.storage import Store
 from .const import DOMAIN, NAME, VERSION
 from .ems_alpha76_adapter import (
     BATTERY_CAPACITY_KWH,
+    CHARGE_EFFICIENCY_PERCENT,
+    DISCHARGE_EFFICIENCY_PERCENT,
     EXECUTION_BUFFER_PERCENT,
+    MAX_CHARGE_POWER_W,
+    MAX_DISCHARGE_POWER_W,
+    MINIMUM_TRADE_MARGIN,
     MIN_SOC_PERCENT,
+    SOFTWARE_RESERVE_PERCENT,
 )
 from .ems_alpha76_runtime import DummyOSEmsAlpha76Runtime, get_ems_alpha76_runtime
 from .ems_g5_live_parity import compare_frozen_live_snapshot
@@ -70,17 +76,18 @@ class DummyOSG5LiveParityRuntime:
 
     def _config_snapshot(self) -> dict[str, Any]:
         runtime = self.ems_runtime
+        data = runtime.data if isinstance(runtime.data, dict) else {}
         return {
-            "battery_capacity_kwh": BATTERY_CAPACITY_KWH,
+            "battery_capacity_kwh": float(data.get("battery_capacity_kwh", BATTERY_CAPACITY_KWH)),
             "min_soc_percent": MIN_SOC_PERCENT,
-            "software_reserve_percent": float(runtime.software_reserve_percent),
+            "software_reserve_percent": float(data.get("software_reserve_percent", SOFTWARE_RESERVE_PERCENT)),
             "execution_buffer_percent": EXECUTION_BUFFER_PERCENT,
-            "max_charge_power_w": int(runtime.max_charge_power_w),
-            "max_discharge_power_w": int(runtime.max_discharge_power_w),
-            "charge_efficiency_percent": float(runtime.charge_efficiency_percent),
-            "discharge_efficiency_percent": float(runtime.discharge_efficiency_percent),
-            "minimum_trade_margin": float(runtime.minimum_trade_margin),
-            "electrical_profile": runtime.electrical_profile,
+            "max_charge_power_w": int(data.get("max_charge_power_w", runtime.max_charge_power_w or MAX_CHARGE_POWER_W)),
+            "max_discharge_power_w": int(data.get("max_discharge_power_w", runtime.max_discharge_power_w or MAX_DISCHARGE_POWER_W)),
+            "charge_efficiency_percent": float(data.get("charge_efficiency_percent", CHARGE_EFFICIENCY_PERCENT)),
+            "discharge_efficiency_percent": float(data.get("discharge_efficiency_percent", DISCHARGE_EFFICIENCY_PERCENT)),
+            "minimum_trade_margin": float(data.get("minimum_trade_margin", MINIMUM_TRADE_MARGIN)),
+            "electrical_profile": data.get("electrical_profile", runtime.electrical_profile),
         }
 
     async def async_capture_and_compare(self) -> dict[str, Any]:
