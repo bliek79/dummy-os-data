@@ -2,7 +2,7 @@
 
 Step 8B deliberately removes the former Alpha35 shadow Plan Store / Scheduler /
 Safety / Execution / Manual Interface bundle from the active entity surface.
-Only the grid-support diagnostic remains here.  Operational EMS presentation is
+Only the grid-support diagnostic remains here. Operational EMS presentation is
 provided by ``ems_alpha76_surface`` and reads the exact alpha76 runtime.
 """
 from __future__ import annotations
@@ -16,7 +16,6 @@ from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .do_plan_grid_support import build_do_plan_grid_support
-from .ems_alpha76_surface import build_alpha76_status_sensors
 from .planner_time_runtime import aligned_reference, subscribe_upstream
 
 
@@ -97,6 +96,9 @@ def _state_contract(hass: Any, unique_id: str) -> tuple[str | None, dict[str, An
 
 def build_do_plan_grid_support_sensors(coordinator: Any) -> list[Any]:
     """Expose grid-support diagnostics plus the authoritative alpha76 status surface."""
+    # Keep these imports lazy so the pure refresh-key helper can still be loaded
+    # by the lightweight regression harness without importing full HA platforms.
+    from .ems_alpha76_surface import build_alpha76_status_sensors
     from .sensor import DummyOSPlanReserveSOCSensor
 
     class DummyOSPlanGridSupportSensor(DummyOSPlanReserveSOCSensor):
