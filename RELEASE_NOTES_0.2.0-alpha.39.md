@@ -1,5 +1,7 @@
 # Dummy OS Energy 0.2.0-alpha.39
 
+**Tag:** `0.2.0-alpha.39`
+
 ## Doel
 
 Step 8G shadow-validatie van de originele EMS alpha76 handmatige lifecycle-handoff, zonder fysieke batterijuitvoering.
